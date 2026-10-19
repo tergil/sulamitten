@@ -33,6 +33,9 @@ function ukenummer(d: string): number {
   return Math.ceil(((dato.getTime() - start.getTime()) / 86_400_000 + 1) / 7);
 }
 
+const VALG_MERKEDAGER = 'familie.kalender.merkedager';
+const VALG_UKENUMMER = 'familie.kalender.ukenummer';
+
 function lesValg(nokkel: string): string | null {
   try { return localStorage.getItem(nokkel); } catch { return null; }
 }
@@ -134,15 +137,14 @@ export function Kalender({ gaaTil }: { gaaTil: (r: string) => void }) {
   const { navn } = useFolk();
   const kategorier = useKategorier();
   const idag = iDag();
-  const [kategoriArk, setKategoriArk] = useState(false);
   const [visning, setVisningRaa] = useState<Visning>(() => (lesValg('familie.kalender.visning') as Visning) ?? (window.innerWidth < 640 ? 'uke' : 'maaned'));
   const setVisning = (v: Visning) => { setVisningRaa(v); lagreValg('familie.kalender.visning', v); };
   const [anker, setAnker] = useState(idag);
   const [valgt, setValgt] = useState(idag);
   const [ark, setArk] = useState<{ post?: KalenderPost; dato: string } | null>(null);
-  const [abonner, setAbonner] = useState(false);
-  const [skjulMerkedager, setSkjulMerkedagerRaa] = useState(() => lesValg('familie.kalender.merkedager') === 'skjul');
-  const setSkjulMerkedager = (v: boolean) => { setSkjulMerkedagerRaa(v); lagreValg('familie.kalender.merkedager', v ? 'skjul' : 'vis'); };
+  // Innstillingene ligger under Mer → Kalender (KalenderValg)
+  const [skjulMerkedager] = useState(() => lesValg(VALG_MERKEDAGER) === 'skjul');
+  const [visUkenr] = useState(() => lesValg(VALG_UKENUMMER) !== 'skjul');
 
   const forsteIMnd = `${anker.slice(0, 7)}-01`;
   const fra = visning === 'uke' ? mandagI(anker) : mandagI(forsteIMnd);
@@ -187,7 +189,7 @@ export function Kalender({ gaaTil }: { gaaTil: (r: string) => void }) {
         <div className="knapperad" style={{ alignItems: 'center' }}>
           {!visesIdag && <button className="knapp liten" onClick={tilIdag}>I dag</button>}
           <Segment etikett="Visning" verdi={visning} endre={setVisning} valg={[{ verdi: 'uke', tekst: 'Uke' }, { verdi: 'maaned', tekst: 'Måned' }]} />
-          <button className="knapp liten flat" onClick={() => setAbonner(true)} title="Vis kalenderen i telefonens kalender"><Ikon navn="mobil" storrelse={16} />Abonner</button>
+          <button className="knapp ikon flat liten" onClick={() => gaaTil('kalendervalg')} aria-label="Innstillinger for kalenderen" title="Innstillinger"><Ikon navn="verktoy" storrelse={18} /></button>
         </div>
       </div>
 
@@ -198,14 +200,15 @@ export function Kalender({ gaaTil }: { gaaTil: (r: string) => void }) {
       ) : (
         <div className="rutenett to-en">
           <section className="kort">
-            <div className="kal-maaned" role="grid" aria-label={maanedNavn(forsteIMnd)}>
+            <div className={`kal-maaned${visUkenr ? ' med-ukenr' : ''}`} role="grid" aria-label={maanedNavn(forsteIMnd)}>
+              {visUkenr && <div className="kal-ukedag" role="columnheader" aria-label="Uke">U</div>}
               {UKEDAGER_KORT.map((u) => <div key={u} className="kal-ukedag" role="columnheader">{u}</div>)}
-              {dager.map((d) => {
+              {dager.flatMap((d, i) => {
                 const her = paa(d);
                 const utenfor = d.slice(0, 7) !== forsteIMnd.slice(0, 7);
                 const dagens = merkedager.get(d);
                 const rod = dagens?.some((m) => m.rod);
-                return (
+                const celle = (
                   <button key={d} role="gridcell" aria-pressed={d === valgt} onClick={() => setValgt(d)}
                     className={`kal-celle${utenfor ? ' utenfor' : ''}${d === idag ? ' i-dag' : ''}${rod ? ' rod' : ''}`}
                     aria-label={`${dagTittel(d)}${dagens ? ` (${dagens.map((m) => m.navn).join(', ')})` : ''}: ${her.length} avtaler`}>
@@ -217,6 +220,9 @@ export function Kalender({ gaaTil }: { gaaTil: (r: string) => void }) {
                     </span>
                   </button>
                 );
+                if (!visUkenr || i % 7 !== 0) return [celle];
+                const uke = ukenummer(d);
+                return [<div key={`u${d}`} className="kal-ukenr" role="rowheader" aria-label={`Uke ${uke}`}>{uke}</div>, celle];
               })}
             </div>
           </section>
@@ -231,16 +237,10 @@ export function Kalender({ gaaTil }: { gaaTil: (r: string) => void }) {
         <span><Prikk farge={0} />Bursdager</span>
         <span><Prikk farge={3} />Frister</span>
         <span><span className="kal-rod-nr" aria-hidden="true">17</span>Røde dager</span>
-        <button className="lenkeknapp" onClick={() => setKategoriArk(true)}>Endre kategorier</button>
-        <button className="lenkeknapp" onClick={() => setSkjulMerkedager(!skjulMerkedager)}>
-          {skjulMerkedager ? 'Vis merkedager' : 'Skjul merkedager'}
-        </button>
       </div>
 
       <button className="fab" onClick={() => setArk({ dato: nyDato })}><Ikon navn="pluss" storrelse={22} />Ny avtale</button>
       {ark && <AvtaleArk post={ark.post} startDato={ark.dato} lukk={() => setArk(null)} />}
-      {abonner && <AbonnerArk lukk={() => setAbonner(false)} />}
-      {kategoriArk && <KategoriArk lukk={() => setKategoriArk(false)} />}
     </>
   );
 }
@@ -446,6 +446,55 @@ export function AvtaleArk({ post, startDato, lukk }: { post?: KalenderPost; star
       </form>
     </Ark>
     )
+  );
+}
+
+// ---------------------------------------------------------------- Innstillinger (Mer → Kalender)
+
+export function KalenderValg() {
+  const { felles } = useTilstand();
+  const kategorier = useKategorier();
+  const [visUkenr, setVisUkenr] = useState(() => lesValg(VALG_UKENUMMER) !== 'skjul');
+  const [visMerkedager, setVisMerkedager] = useState(() => lesValg(VALG_MERKEDAGER) !== 'skjul');
+  const [kategoriArk, setKategoriArk] = useState(false);
+  const [abonner, setAbonner] = useState(false);
+
+  return (
+    <>
+      <section className="kort">
+        <div className="kort-hode">
+          <div className="tittel"><h2>Visning</h2><span className="dempet liten">Gjelder bare denne enheten</span></div>
+        </div>
+        <label className="rad" style={{ cursor: 'pointer' }}>
+          <span className="hoved"><span className="navn">Ukenummer</span><span className="info" style={{ whiteSpace: 'normal' }}>Egen kolonne til venstre i månedsvisningen</span></span>
+          <input type="checkbox" className="bryter" checked={visUkenr}
+            onChange={(e) => { setVisUkenr(e.target.checked); lagreValg(VALG_UKENUMMER, e.target.checked ? 'vis' : 'skjul'); }} />
+        </label>
+        <label className="rad" style={{ cursor: 'pointer', borderBottom: 0 }}>
+          <span className="hoved"><span className="navn">Merkedager</span><span className="info" style={{ whiteSpace: 'normal' }}>Morsdag, valentinsdag og lignende. Røde dager vises alltid.</span></span>
+          <input type="checkbox" className="bryter" checked={visMerkedager}
+            onChange={(e) => { setVisMerkedager(e.target.checked); lagreValg(VALG_MERKEDAGER, e.target.checked ? 'vis' : 'skjul'); }} />
+        </label>
+      </section>
+
+      <section className="kort" style={{ padding: '4px 16px' }}>
+        <div className="liste">
+          <button className="rad" onClick={() => setKategoriArk(true)}>
+            <Ikon navn="kategori" />
+            <span className="hoved"><span className="navn">Kategorier</span><span className="info">{kategorier.map((k) => k.navn).join(', ') || 'Ingen'}</span></span>
+            <Ikon navn="pilhoyre" storrelse={16} />
+          </button>
+          <button className="rad" onClick={() => setAbonner(true)}>
+            <Ikon navn="mobil" />
+            <span className="hoved"><span className="navn">Vis i telefonens kalender</span><span className="info">{felles?.kalenderNokkel ? 'Abonnementet er på' : 'Av'}</span></span>
+            <Ikon navn="pilhoyre" storrelse={16} />
+          </button>
+        </div>
+      </section>
+
+      {abonner && <AbonnerArk lukk={() => setAbonner(false)} />}
+      {kategoriArk && <KategoriArk lukk={() => setKategoriArk(false)} />}
+    </>
   );
 }
 

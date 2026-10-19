@@ -32,6 +32,8 @@ Personlige arbeidsinstrukser ligger i `~/.claude/CLAUDE.md`. Denne fila handler 
   (`?n=<FellesDok.kalenderNokkel>`, utvidede forekomster som ICS, `logikk/ics.ts`).
   Helligdager og merkedager (`logikk/helligdager.ts`, regnes ut – lagres ikke) vises som merkelapp ved datoen, røde dager
   med rød dato. De er ikke avtaler (`kalenderPoster` tar dem ikke med) og er derfor heller ikke i abonnementet.
+  Innstillinger: Mer → Kalender (`#/kalendervalg`, `KalenderValg`) – ukenummer og merkedager (per enhet, `localStorage`),
+  kategorier og abonnement (felles).
 - **Navigasjon:** Oversikt · Kalender · Lister · Økonomi (fanene Oppfølging · Budsjett · Sparemål, på alle skjermstørrelser) · Mer. Oversikt viser de neste 5 avtalene
   (det som er over forsvinner, `kommende()`/`erForbi()`), huskelappen og økonomien. Snarveien nede til høyre på Oversikt følger
   seksjonen man ser på (`data-fab`: Ny avtale → Ny liste → Før utgift). Felles/privat-bryteren står over økonomien.

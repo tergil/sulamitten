@@ -774,6 +774,8 @@ body.drar-punkt [data-dra-id] { transition: transform .15s ease; }
 
 /* Måned */
 .kal-maaned { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
+.kal-maaned.med-ukenr { grid-template-columns: minmax(1.25rem, auto) repeat(7, minmax(0, 1fr)); }
+.kal-ukenr { font-size: 0.6875rem; font-weight: 600; color: var(--dempet); text-align: center; padding: 6px 2px 0 0; font-variant-numeric: tabular-nums; }
 .kal-ukedag { text-align: center; font-size: 0.6875rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--dempet); padding: var(--a1) 0 var(--a2); }
 .kal-celle {
   min-height: 92px; padding: 4px; border: 1px solid transparent; border-radius: 8px; background: var(--flate-2);

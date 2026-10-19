@@ -7,7 +7,7 @@ import { Oversikt } from './sider/Oversikt';
 import { Budsjett } from './sider/Budsjett';
 import { NyPrivatRevisjon, PrivatBudsjett, PrivatOversikt } from './sider/Privat';
 import { HuskelappKort, Lister, NyListeArk } from './sider/Lister';
-import { AvtaleArk, Kalender, KommendeKort } from './sider/Kalender';
+import { AvtaleArk, Kalender, KalenderValg, KommendeKort } from './sider/Kalender';
 import { iDag } from './logikk/beregning';
 import { Varsler } from './sider/Varsler';
 import { Innboks } from './sider/Innboks';
@@ -172,12 +172,13 @@ const OPPSETT: [string, string, string][] = [
   ['kontoer', 'konto', 'Kontoer'],
   ['kategorier', 'kategori', 'Kategorier'],
   ['personer', 'person', 'Personer'],
+  ['kalendervalg', 'kalender', 'Kalender'],
   ['varsler', 'bjelle', 'Varsler'],
   ['data', 'lastned', 'Import/eksport'],
 ];
 const TITLER: Record<string, string> = {
   oversikt: 'Oversikt', budsjett: 'Budsjett', oppfolging: 'Oppfølging', lister: 'Lister', kalender: 'Kalender', sparing: 'Sparemål', mer: 'Mer',
-  revisjoner: 'Revisjoner', kontoer: 'Kontoer og banker', kategorier: 'Kategorier', personer: 'Personer og fordeling', varsler: 'Varselvalg', data: 'Import og eksport',
+  revisjoner: 'Revisjoner', kontoer: 'Kontoer og banker', kategorier: 'Kategorier', personer: 'Personer og fordeling', kalendervalg: 'Kalenderinnstillinger', varsler: 'Varselvalg', data: 'Import og eksport',
   innboks: 'Varsler',
 };
 
@@ -262,6 +263,7 @@ function Skall() {
     case 'kategorier': innhold = <Kategorier />; break;
     case 'personer': innhold = <Personer />; break;
     case 'data': innhold = <Data />; break;
+    case 'kalendervalg': innhold = <KalenderValg />; break;
     case 'varsler': innhold = <Varsler />; break;
     case 'innboks': innhold = <Innboks gaaTil={gaaTil} />; break;
     case 'mer': innhold = <Mer gaaTil={gaaTil} tema={tema} byttTema={byttTema} />; break;
