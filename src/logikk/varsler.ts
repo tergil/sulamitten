@@ -5,7 +5,7 @@ import type { Hendelse, Liste, Punkt, VarselInnstillinger, VarselType } from '..
 import { STANDARD_VARSLER } from '../data/modell';
 import { kalenderPoster, leggTilDager, minutter, paaDato } from './kalender';
 import { anledningsNavn, forekomster } from './gaveaar';
-import { dagerMellom, erBrukt, erFerdig, hageIMaaned, huskelapp } from './lister';
+import { LISTETYPER, dagerMellom, erBrukt, erFerdig, hageIMaaned, huskelapp } from './lister';
 
 export interface Varsel {
   type: VarselType;
@@ -204,32 +204,137 @@ export function forVarsler(hendelser: Hendelse[], naa: { dato: string; minutt: n
   return ut;
 }
 
-/** Mange varsler samme dag blir ett samlet varsel, så telefonen ikke fylles opp */
-export function slaaSammen(varsler: Varsel[], maks = 3): { tittel: string; tekst: string; url: string; nokler: string[] }[] {
-  if (varsler.length <= maks) return varsler.map((v) => ({ tittel: v.tittel, tekst: v.tekst, url: v.url, nokler: v.nokler }));
+// ---------------------------------------------------------------- Det den andre gjør i delte lister
+
+/** Varseltyper for det den andre gjør – sendes fortløpende, ikke på brukerens klokkeslett */
+export const AKTIVITETSTYPER: VarselType[] = ['nyListe', 'nyttPunkt', 'gaveide', 'kjopt'];
+
+/**
+ * En endring i en delt liste (tabellen «aktivitet», fylles av databasetriggere i supabase/varsler.sql).
+ * liste = ny delt liste, punkt = nytt punkt, status = punktet fikk ny status.
+ */
+export interface Aktivitet {
+  id: number;
+  /** Brukeren (auth-id) som gjorde endringen */
+  bruker: string;
+  hva: 'liste' | 'punkt' | 'status';
+  listeId: string;
+  punktId?: string | null;
+  status?: string | null;
+}
+
+/** «Melk, brød og egg» – maks fire, resten som «og 3 til» */
+function opplisting(tekster: string[], maks = 4): string {
+  if (tekster.length <= 1) return tekster[0] ?? '';
+  if (tekster.length <= maks) return `${tekster.slice(0, -1).join(', ')} og ${tekster[tekster.length - 1]}`;
+  return `${tekster.slice(0, maks).join(', ')} og ${tekster.length - maks} til`;
+}
+
+/**
+ * Varsler om det andre har gjort i delte lister siden sist: nye lister, nye punkter, gaveideer og kjøp.
+ * Én melding per liste og type, så ti nye ting i handlelisten blir ett varsel. Bare det som fortsatt er slik
+ * (punktet finnes, er fortsatt kjøpt) varsles – angrer man med en gang, blir det ikke noe varsel.
+ * Listene og punktene skal være de mottakeren kan se (felles).
+ */
+export function aktivitetsVarsler(aktiviteter: Aktivitet[], lister: Liste[], punkter: Punkt[], mottaker: string,
+  innstillinger: VarselInnstillinger, navn: (bruker: string) => string | undefined): Varsel[] {
+  const t = medStandard(innstillinger).typer;
+  const listeMap = new Map(lister.filter((l) => !l.mal).map((l) => [l.id, l]));
+  const punktMap = new Map(punkter.map((p) => [p.id, p]));
+  const andres = aktiviteter.filter((a) => a.bruker !== mottaker && listeMap.has(a.listeId));
+  const maksId = Math.max(0, ...andres.map((a) => a.id));
+  const ut: Varsel[] = [];
+  const legg = (type: VarselType, listeId: string, bruker: string, tittel: string, tekst: string, url = `#/lister/${listeId}`) => {
+    const nokkel = `aktivitet:${type}:${listeId}:${bruker}:${maksId}`;
+    ut.push({ type, nokkel, nokler: [nokkel], tittel, tekst, url });
+  };
+  const hvem = (bruker: string) => navn(bruker) ?? 'Noen';
+
+  // Nye lister. Punktene som fulgte med (fra mal) varsles ikke for seg.
+  const nyeLister = new Set<string>();
+  for (const a of andres.filter((x) => x.hva === 'liste')) {
+    if (nyeLister.has(a.listeId)) continue;
+    nyeLister.add(a.listeId);
+    if (!t.nyListe.pa) continue;
+    const l = listeMap.get(a.listeId)!;
+    const antall = punkter.filter((p) => p.listeId === l.id && !p.forelderId).length;
+    legg('nyListe', l.id, a.bruker, `${hvem(a.bruker)} lagde en ny liste: ${l.navn}`, antall ? `${antall} ${antall === 1 ? 'punkt' : 'punkter'} så langt.` : 'Tom foreløpig – klar til å fylles.');
+  }
+
+  // Grupper per (bruker, liste): nye punkter, nye gaveideer og kjøp
+  const grupper = new Map<string, { bruker: string; liste: Liste; nye: Punkt[]; ideer: Punkt[]; kjopt: Punkt[] }>();
+  const sett = new Set<string>();
+  for (const a of andres) {
+    if (a.hva === 'liste' || !a.punktId || nyeLister.has(a.listeId)) continue;
+    const p = punktMap.get(a.punktId);
+    if (!p) continue;
+    const liste = listeMap.get(a.listeId)!;
+    const kjoptNaa = p.status === 'kjopt' && LISTETYPER[liste.type].statuser.some((s) => s.id === 'kjopt');
+    const hva = kjoptNaa ? 'kjopt' : a.hva === 'punkt' ? (liste.type === 'gaveaar' && p.forelderId ? 'ideer' : 'nye') : null;
+    // Status endret til noe annet enn kjøpt (eller tilbake igjen): ikke noe varsel
+    if (!hva || (a.hva === 'status' && !kjoptNaa) || sett.has(`${hva}:${p.id}`)) continue;
+    sett.add(`${hva}:${p.id}`);
+    const nokkel = `${a.bruker}|${a.listeId}`;
+    const g = grupper.get(nokkel) ?? { bruker: a.bruker, liste, nye: [], ideer: [], kjopt: [] };
+    g[hva].push(p);
+    grupper.set(nokkel, g);
+  }
+
+  const mottakerAv = (p: Punkt) => (p.forelderId ? punktMap.get(p.forelderId)?.tekst : undefined);
+  for (const { bruker, liste, nye, ideer, kjopt } of grupper.values()) {
+    const h = hvem(bruker);
+    if (nye.length && t.nyttPunkt.pa) {
+      legg('nyttPunkt', liste.id, bruker, `Nytt i ${liste.navn}`, `${h} la til ${opplisting(nye.map((p) => p.tekst))}.`);
+    }
+    if (ideer.length && t.gaveide.pa) {
+      const til = [...new Set(ideer.map(mottakerAv).filter(Boolean))] as string[];
+      legg('gaveide', liste.id, bruker,
+        ideer.length === 1 ? `${h} har en gaveidé til ${til[0] ?? 'noen'}` : `${h} la inn ${ideer.length} gaveideer`,
+        ideer.length === 1 ? `«${ideer[0].tekst}» · ${liste.navn}` : `Til ${opplisting(til)} · ${liste.navn}`);
+    }
+    if (kjopt.length && t.kjopt.pa) {
+      const gaver = liste.type === 'gaveaar';
+      const til = [...new Set(kjopt.map(mottakerAv).filter(Boolean))] as string[];
+      const tittel = gaver
+        ? (kjopt.length === 1 ? `${h} kjøpte gave til ${til[0] ?? 'noen'}` : `${h} kjøpte ${kjopt.length} gaver`)
+        : `${h} kjøpte ${kjopt.length === 1 ? `«${kjopt[0].tekst}»` : `${kjopt.length} ting`}`;
+      const tekst = gaver
+        ? (kjopt.length === 1 ? `«${kjopt[0].tekst}» · ${liste.navn}` : `Til ${opplisting(til)} · ${liste.navn}`)
+        : kjopt.length === 1 ? `Fra ${liste.navn}` : `${opplisting(kjopt.map((p) => p.tekst))} · ${liste.navn}`;
+      legg('kjopt', liste.id, bruker, tittel, tekst);
+    }
+  }
+  return ut;
+}
+
+// ---------------------------------------------------------------- Sending
+
+export interface Melding { tittel: string; tekst: string; url: string; nokler: string[]; type?: VarselType }
+
+/** Mange varsler blir ett samlet varsel, så telefonen ikke fylles opp. Det samlede åpner varslene i appen. */
+export function slaaSammen(varsler: Varsel[], maks = 3, samletTittel = (n: number) => `${n} påminnelser i dag`): Melding[] {
+  if (varsler.length <= maks) return varsler.map((v) => ({ tittel: v.tittel, tekst: v.tekst, url: v.url, nokler: v.nokler, type: v.type }));
   return [{
-    tittel: `${varsler.length} påminnelser i dag`,
+    tittel: samletTittel(varsler.length),
     tekst: varsler.slice(0, 4).map((v) => v.tittel).join('\n') + (varsler.length > 4 ? `\n… og ${varsler.length - 4} til` : ''),
-    url: '#/oversikt',
+    url: '#/innboks',
     nokler: varsler.flatMap((v) => v.nokler),
   }];
 }
 
-export interface Melding { tittel: string; tekst: string; url: string; nokler: string[] }
-
 /**
  * «Skjul detaljer»: det som vises på låseskjermen sier ikke hva det gjelder (navn, gaver, avtaler).
- * Lenken i varselet er den samme, så appen åpnes på riktig sted.
+ * Varselet åpner varslene i appen (bjella), der detaljene står – ellers vet man ikke hva det gjaldt.
  */
-export function utenDetaljer(meldinger: Melding[], typer: VarselType[] = []): Melding[] {
-  return meldinger.map((m, i) => {
-    const forAvtale = typer[i] === 'avtaleFor';
-    return {
-      ...m,
-      tittel: 'Sulamitten',
-      tekst: forAvtale ? 'En avtale nærmer seg. Åpne appen for å se hvilken.' : 'Det er noe å huske på i dag. Åpne appen for å se hva.',
-    };
-  });
+export function utenDetaljer(meldinger: Melding[]): Melding[] {
+  return meldinger.map((m) => ({
+    ...m,
+    tittel: 'Sulamitten',
+    tekst: m.type === 'avtaleFor' ? 'En avtale nærmer seg. Åpne appen for å se hvilken.'
+      : m.type && AKTIVITETSTYPER.includes(m.type) ? 'Det er nytt i en delt liste. Åpne appen for å se hva.'
+      : 'Det er noe å huske på i dag. Åpne appen for å se hva.',
+    url: '#/innboks',
+  }));
 }
 
 /** Dato, time og minutt fra midnatt akkurat nå i Norge (serveren går i UTC) */

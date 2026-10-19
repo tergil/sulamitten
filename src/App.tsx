@@ -10,6 +10,8 @@ import { HuskelappKort, Lister, NyListeArk } from './sider/Lister';
 import { AvtaleArk, Kalender, KommendeKort } from './sider/Kalender';
 import { iDag } from './logikk/beregning';
 import { Varsler } from './sider/Varsler';
+import { Innboks } from './sider/Innboks';
+import { useInnboks } from './data/innboks';
 import { DeltSide } from './sider/Delt';
 import { planTittel, tilPlanType } from './logikk/gaveaar';
 import { useLister } from './data/lister';
@@ -175,12 +177,25 @@ const OPPSETT: [string, string, string][] = [
 ];
 const TITLER: Record<string, string> = {
   oversikt: 'Oversikt', budsjett: 'Budsjett', oppfolging: 'Oppfølging', lister: 'Lister', kalender: 'Kalender', sparing: 'Sparemål', mer: 'Mer',
-  revisjoner: 'Revisjoner', kontoer: 'Kontoer og banker', kategorier: 'Kategorier', personer: 'Personer og fordeling', varsler: 'Varsler', data: 'Import og eksport',
+  revisjoner: 'Revisjoner', kontoer: 'Kontoer og banker', kategorier: 'Kategorier', personer: 'Personer og fordeling', varsler: 'Varselvalg', data: 'Import og eksport',
+  innboks: 'Varsler',
 };
 
 function Lagring({ status }: { status: LagreStatus }) {
   const tekst = { lagret: 'Lagret', lagrer: 'Lagrer …', feil: 'Ikke lagret', konflikt: 'Konflikt' }[status];
   return <span className={`lagring ${status === 'lagrer' ? 'lagrer' : status === 'lagret' ? '' : 'feil'}`} role="status"><span className="punkt" />{tekst}</span>;
+}
+
+/** Bjella i topplinjen: åpner varslene i appen, med antall uleste */
+function Bjelle({ aktiv }: { aktiv: boolean }) {
+  const { uleste } = useInnboks();
+  return (
+    <a className="knapp flat ikon topp-bjelle" href="#/innboks" aria-current={aktiv ? 'page' : undefined}
+      aria-label={uleste ? `Varsler, ${uleste} ${uleste === 1 ? 'nytt' : 'nye'}` : 'Varsler'}>
+      <Ikon navn="bjelle" />
+      {uleste > 0 && <span className="bjelle-tall" aria-hidden="true">{uleste > 9 ? '9+' : uleste}</span>}
+    </a>
+  );
 }
 
 function Skall() {
@@ -248,6 +263,7 @@ function Skall() {
     case 'personer': innhold = <Personer />; break;
     case 'data': innhold = <Data />; break;
     case 'varsler': innhold = <Varsler />; break;
+    case 'innboks': innhold = <Innboks gaaTil={gaaTil} />; break;
     case 'mer': innhold = <Mer gaaTil={gaaTil} tema={tema} byttTema={byttTema} />; break;
     // Oversikt: kalender og huskelapp først, økonomien under (med felles/privat-bryteren der)
     default: innhold = (
@@ -297,6 +313,7 @@ function Skall() {
             : <h1>{tittel}</h1>}
           {visRevVelger && revVelger}
           <Lagring status={status} />
+          <Bjelle aktiv={side === 'innboks'} />
         </header>
 
         <main className={`innhold${fabPlass ? ' med-fab' : ''}`}>

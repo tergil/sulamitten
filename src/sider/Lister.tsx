@@ -560,7 +560,7 @@ export function NyListeArk({ lukk, opprettet }: { lukk: () => void; opprettet: (
           <div className="valgchips" role="radiogroup" aria-label="Start fra">
             <button type="button" role="radio" aria-checked={kilde === 'tom'} onClick={() => velg('tom')}>Tom liste</button>
             {MALER.map((m) => (
-              <button key={m.id} type="button" role="radio" aria-checked={kilde === `mal:${m.id}`} onClick={() => velg(`mal:${m.id}`)}>{m.ikon} {m.navn}</button>
+              <button key={m.id} type="button" role="radio" aria-checked={kilde === `mal:${m.id}`} onClick={() => velg(`mal:${m.id}`)}><Ikon navn={listeIkon(m.ikon)} storrelse={14} />{m.navn}</button>
             ))}
             {egneMaler.map((m) => (
               <button key={m.id} type="button" role="radio" aria-checked={kilde === `egen:${m.id}`} onClick={() => velg(`egen:${m.id}`)}><Ikon navn="kopi" storrelse={14} />{m.navn}</button>

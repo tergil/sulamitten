@@ -13,7 +13,8 @@ import type { KalenderPost } from '../src/logikk/kalender';
 import { brett, icsTekst, lagIcs } from '../src/logikk/ics';
 import { angreEndring, endreForekomst, erForbi, kommende, forekomster as kalForekomster, gjentakTekst, kalenderPoster, sammeMonster, slettForekomst } from '../src/logikk/kalender';
 import { STANDARD_VARSLER } from '../src/data/modell';
-import { beregnVarsler, forVarsler, medStandard, norskTid, slaaSammen, utenDetaljer, varseltrinn } from '../src/logikk/varsler';
+import { aktivitetsVarsler, beregnVarsler, forVarsler, medStandard, norskTid, slaaSammen, utenDetaljer, varseltrinn, type Aktivitet } from '../src/logikk/varsler';
+import { merkedager, merkedagerMellom, paaskedag } from '../src/logikk/helligdager';
 
 let feil = 0;
 let ok = 0;
@@ -316,11 +317,79 @@ sjekk('alt avslått gir ingen varsler', beregnVarsler(ga.lister, ga.punkter, avs
 sjekk('mange varsler slås sammen', slaaSammen(Array.from({ length: 5 }, (_, i) => ({ type: 'frist' as const, nokkel: `k${i}`, nokler: [`k${i}`], tittel: `T${i}`, tekst: '', url: '' })))
   .map((x) => [x.tittel, x.nokler.length]), [['5 påminnelser i dag', 5]]);
 
-// Skjul detaljer: ingenting om hva varselet gjelder, men samme lenke og nøkler
-const skjult = utenDetaljer([{ tittel: 'Mamma har bursdag i dag', tekst: 'Gave: skjerf', url: '#/lister/x', nokler: ['a'] }, { tittel: 'Tannlege kl. 10:00', tekst: 'Oslo', url: '#/kalender', nokler: ['b'] }], ['bursdag', 'avtaleFor']);
-sjekk('skjul detaljer: ingen navn eller gaver', skjult.some((m) => /Mamma|skjerf|Tannlege|Oslo/.test(m.tittel + m.tekst)), false);
-sjekk('skjul detaljer: samme lenke og nøkler', skjult.map((m) => [m.url, m.nokler[0]]), [['#/lister/x', 'a'], ['#/kalender', 'b']]);
-sjekk('skjul detaljer: avtale har egen tekst', skjult[1].tekst.includes('avtale'), true);
+sjekk('samlet varsel åpner bjella', slaaSammen(Array.from({ length: 5 }, (_, i) => ({ type: 'frist' as const, nokkel: `k${i}`, nokler: [`k${i}`], tittel: `T${i}`, tekst: '', url: '#/lister/x' })))[0].url, '#/innboks');
+
+// Skjul detaljer: ingenting om hva varselet gjelder – varselet åpner bjella, der detaljene står
+const skjult = utenDetaljer([
+  { tittel: 'Mamma har bursdag i dag', tekst: 'Gave: skjerf', url: '#/lister/x', nokler: ['a'], type: 'bursdag' },
+  { tittel: 'Tannlege kl. 10:00', tekst: 'Oslo', url: '#/kalender', nokler: ['b'], type: 'avtaleFor' },
+  { tittel: 'Kari kjøpte gave til Ola', tekst: '«Lego»', url: '#/lister/y', nokler: ['c'], type: 'kjopt' },
+]);
+sjekk('skjul detaljer: ingen navn eller gaver', skjult.some((m) => /Mamma|skjerf|Tannlege|Oslo|Kari|Ola|Lego/.test(m.tittel + m.tekst)), false);
+sjekk('skjul detaljer: åpner bjella, samme nøkler', skjult.map((m) => [m.url, m.nokler[0]]), [['#/innboks', 'a'], ['#/innboks', 'b'], ['#/innboks', 'c']]);
+sjekk('skjul detaljer: avtale og delte lister har egen tekst', [skjult[1].tekst.includes('avtale'), skjult[2].tekst.includes('delt liste')], [true, true]);
+
+// --- Varsler om det den andre gjør i delte lister
+{
+  const lister = ga.lister.filter((l) => l.eier === null);
+  const huske = lister.find((l) => l.navn === 'Huskeliste')!;
+  const onsker = lister.find((l) => l.navn === 'Ønsker til huset')!;
+  const gaveaar = lister.find((l) => l.navn === 'Gaveår')!;
+  const mottaker = ga.punkter.find((p) => p.listeId === gaveaar.id && !p.forelderId)!;
+  const ny = (id: string, listeId: string, tekst: string, ekstra: Partial<Punkt> = {}): Punkt =>
+    ({ id, listeId, forelderId: null, tekst, notat: '', status: 'apen', belop: null, dato: null, rekkefolge: 99, ...ekstra });
+  const melk = ny('x-melk', huske.id, 'Melk');
+  const brod = ny('x-brod', huske.id, 'Brød');
+  const lego = ny('x-lego', gaveaar.id, 'Lego', { forelderId: mottaker.id, status: 'ide' });
+  const sofa = ga.punkter.find((p) => p.tekst === 'Ny sofa')!;
+  const punkter = [...ga.punkter, melk, brod, lego].map((p) => (p.id === sofa.id ? { ...p, status: 'kjopt' } : p));
+  const akt: Aktivitet[] = [
+    { id: 1, bruker: 'u-kari', hva: 'punkt', listeId: huske.id, punktId: melk.id },
+    { id: 2, bruker: 'u-kari', hva: 'punkt', listeId: huske.id, punktId: brod.id },
+    { id: 3, bruker: 'u-kari', hva: 'punkt', listeId: gaveaar.id, punktId: lego.id },
+    { id: 4, bruker: 'u-kari', hva: 'status', listeId: onsker.id, punktId: sofa.id, status: 'kjopt' },
+    // Slettet igjen (angret): ikke noe varsel
+    { id: 5, bruker: 'u-kari', hva: 'punkt', listeId: huske.id, punktId: 'x-borte' },
+  ];
+  const navnAv = (b: string) => (b === 'u-kari' ? 'Kari' : 'Ola');
+  const vInn2 = structuredClone(STANDARD_VARSLER);
+  sjekk('aktivitet: én melding per liste og type', aktivitetsVarsler(akt, lister, punkter, 'u-ola', vInn2, navnAv).map((x) => [x.type, x.tittel, x.tekst]), [
+    ['nyttPunkt', 'Nytt i Huskeliste', 'Kari la til Melk og Brød.'],
+    ['gaveide', `Kari har en gaveidé til ${mottaker.tekst}`, '«Lego» · Gaveår'],
+    ['kjopt', 'Kari kjøpte «Ny sofa»', 'Fra Ønsker til huset'],
+  ]);
+  sjekk('aktivitet: ikke varsel om det du selv gjør', aktivitetsVarsler(akt, lister, punkter, 'u-kari', vInn2, navnAv).length, 0);
+  // Kjøpt og så angret (status tilbake): ikke noe varsel
+  const angret = punkter.map((p) => (p.id === sofa.id ? { ...p, status: 'onske' } : p));
+  sjekk('aktivitet: kjøp som er angret varsles ikke', aktivitetsVarsler(akt, lister, angret, 'u-ola', vInn2, navnAv).some((x) => x.type === 'kjopt'), false);
+  // Gave lagt inn som kjøpt med en gang: kjøpt, ikke idé
+  const kjoptMedEn = punkter.map((p) => (p.id === lego.id ? { ...p, status: 'kjopt' } : p));
+  sjekk('aktivitet: ny gave som allerede er kjøpt', aktivitetsVarsler(akt, lister, kjoptMedEn, 'u-ola', vInn2, navnAv).map((x) => [x.type, x.tittel]),
+    [['nyttPunkt', 'Nytt i Huskeliste'], ['kjopt', `Kari kjøpte gave til ${mottaker.tekst}`], ['kjopt', 'Kari kjøpte «Ny sofa»']]);
+  // Ny liste fra mal: ett varsel om listen, ikke om hvert punkt
+  const nyListe = { ...huske, id: 'x-liste', navn: 'Handleliste' };
+  const iNy = [ny('x-a', nyListe.id, 'Egg'), ny('x-b', nyListe.id, 'Smør')];
+  const v2 = aktivitetsVarsler([{ id: 9, bruker: 'u-kari', hva: 'liste', listeId: nyListe.id }, ...iNy.map((p, i) => ({ id: 10 + i, bruker: 'u-kari', hva: 'punkt' as const, listeId: nyListe.id, punktId: p.id }))],
+    [...lister, nyListe], [...punkter, ...iNy], 'u-ola', vInn2, navnAv);
+  sjekk('aktivitet: ny liste', v2.map((x) => [x.type, x.tittel, x.tekst]), [['nyListe', 'Kari lagde en ny liste: Handleliste', '2 punkter så langt.']]);
+  const utenNye = structuredClone(vInn2); utenNye.typer.nyttPunkt.pa = false;
+  sjekk('aktivitet: avslått type', aktivitetsVarsler(akt, lister, punkter, 'u-ola', utenNye, navnAv).map((x) => x.type), ['gaveide', 'kjopt']);
+  const seks = ['A', 'B', 'C', 'D', 'E', 'F'];
+  sjekk('aktivitet: mange ting blir én linje', aktivitetsVarsler(
+    seks.map((t, i) => ({ id: i + 1, bruker: 'u-kari', hva: 'punkt' as const, listeId: huske.id, punktId: `x-${t}` })),
+    lister, [...punkter, ...seks.map((t) => ny(`x-${t}`, huske.id, t))], 'u-ola', vInn2, navnAv)[0].tekst, 'Kari la til A, B, C, D og 2 til.');
+}
+
+// --- Helligdager og merkedager
+sjekk('påskedag', [2024, 2025, 2026, 2027, 2038].map(paaskedag), ['2024-03-31', '2025-04-20', '2026-04-05', '2027-03-28', '2038-04-25']);
+const m26 = merkedager(2026);
+const finn = (navn: string) => m26.find((m) => m.navn === navn)?.dato;
+sjekk('røde dager 2026', m26.filter((m) => m.rod).map((m) => m.dato), ['2026-01-01', '2026-04-02', '2026-04-03', '2026-04-05', '2026-04-06', '2026-05-01', '2026-05-14', '2026-05-17', '2026-05-24', '2026-05-25', '2026-12-25', '2026-12-26']);
+sjekk('merkedager 2026', ['Morsdag', 'Farsdag', 'Kanelbollens dag', 'Fastelavn', 'Første søndag i advent', 'Fjerde søndag i advent'].map(finn),
+  ['2026-02-08', '2026-11-08', '2026-10-04', '2026-02-15', '2026-11-29', '2026-12-20']);
+sjekk('advent når julaften er søndag (2023)', merkedager(2023).filter((m) => m.navn.includes('advent')).map((m) => m.dato), ['2023-12-03', '2023-12-10', '2023-12-17', '2023-12-24']);
+sjekk('merkedager over nyttår', merkedagerMellom('2026-12-30', '2027-01-02').map((m) => m.navn), ['Nyttårsaften', 'Første nyttårsdag']);
+sjekk('ingen emojier i merkedagene', /\p{Extended_Pictographic}/u.test(JSON.stringify(m26)), false);
 
 // Listeikoner: gamle emojier blir SVG-ikoner
 sjekk('listeikon fra emoji', ['🎁', '🕯️', '🕯', '🏔️', '⚡', 'gave', '', undefined, '🦄'].map((e) => listeIkon(e)), ['gave', 'lys', 'lys', 'fjell', 'lyn', 'gave', 'liste', 'liste', 'liste']);

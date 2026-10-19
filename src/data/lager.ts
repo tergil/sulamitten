@@ -1,8 +1,8 @@
 // Lagring: Supabase når VITE_SUPABASE_URL er satt, ellers lokal demomodus i nettleseren.
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import type { DeltListe, FellesDok, Hendelse, Liste, Punkt, PrivatDok, Saldo, Utgift, VarselEnhet, VarselInnstillinger } from './modell';
+import type { DeltListe, FellesDok, Hendelse, InnboksVarsel, Liste, Punkt, PrivatDok, Saldo, Utgift, VarselEnhet, VarselInnstillinger } from './modell';
 import { tomtPrivatDok } from './modell';
-import { demoFelles, demoHendelser, demoLister, demoOppfolging, demoPrivat } from './demo';
+import { demoFelles, demoHendelser, demoInnboks, demoLister, demoOppfolging, demoPrivat } from './demo';
 
 export interface Bruker {
   epost: string;
@@ -80,6 +80,10 @@ export interface Lager {
   slettVarselEnhet(endpoint: string): Promise<void>;
   /** Sender et testvarsel til dine enheter. Returnerer antall sendt. */
   sendTestvarsel(): Promise<number>;
+  /** Varslene i bjella (nyeste først, maks 100) */
+  hentInnboks(): Promise<InnboksVarsel[]>;
+  /** Merker varslene som lest – alle uleste når ingen ider er gitt */
+  merkInnboksLest(ider?: string[]): Promise<void>;
 
   // Kalender – tabellen «hendelse» (supabase/kalender.sql). Alle avtaler er felles.
   hentHendelser(): Promise<Hendelse[]>;
@@ -330,6 +334,19 @@ class LokaltLager implements Lager {
     const reg = await navigator.serviceWorker?.ready;
     await reg?.showNotification('Testvarsel (demo)', { body: 'Det virker! I demomodus vises varselet bare her.', icon: `${import.meta.env.BASE_URL}ikon-192.png` });
     return reg ? 1 : 0;
+  }
+
+  // Demomodus: noen oppdiktede varsler, så bjella har noe å vise
+  async hentInnboks() {
+    const nokkel = `innboks.${this.megEpost()}`;
+    let alle = les<InnboksVarsel[]>(nokkel);
+    if (!alle) { alle = demoInnboks(); skriv(nokkel, alle); }
+    return alle;
+  }
+
+  async merkInnboksLest(ider?: string[]) {
+    const nokkel = `innboks.${this.megEpost()}`;
+    skriv(nokkel, (await this.hentInnboks()).map((v) => (!ider || ider.includes(v.id) ? { ...v, lest: true } : v)));
   }
 
   async hentHendelser() {
@@ -635,6 +652,20 @@ class SupabaseLager implements Lager {
       throw new Error(feil ?? error.message);
     }
     return (data as { sendt?: number })?.sendt ?? 0;
+  }
+
+  async hentInnboks() {
+    const { data, error } = await this.db.from('varsel_innboks').select('id, type, tittel, tekst, url, opprettet, lest')
+      .order('opprettet', { ascending: false }).limit(100);
+    if (error) throw error;
+    return (data ?? []) as InnboksVarsel[];
+  }
+
+  async merkInnboksLest(ider?: string[]) {
+    let sporring = this.db.from('varsel_innboks').update({ lest: true }).eq('lest', false);
+    if (ider) sporring = sporring.in('id', ider);
+    const { error } = await sporring;
+    if (error) throw error;
   }
 
   async slettVedlegg(stier: string[]) {

@@ -20,6 +20,17 @@ const TYPER: { type: VarselType; ikon: string; navn: string; tekst: string; valg
   { type: 'hage', ikon: 'spire', navn: 'Hagen', tekst: 'Den 1. i hver måned: hva som skal gjøres i hagen.', valg: [] },
 ];
 
+/** Når den andre gjør noe i delte lister. Kommer fortløpende (innen et kvarter), men ikke mellom 22 og 07. */
+const AKTIVITET: typeof TYPER = [
+  { type: 'nyListe', ikon: 'liste', navn: 'Nye delte lister', tekst: 'Når den andre lager en ny felles liste.', valg: [] },
+  { type: 'nyttPunkt', ikon: 'rediger', navn: 'Nytt i delte lister', tekst: 'Når den andre legger til noe – ti ting på handlelisten blir ett varsel.', valg: [] },
+  { type: 'gaveide', ikon: 'gave', navn: 'Nye gaveideer', tekst: 'Når den andre legger inn en gaveidé i et felles gaveår.', valg: [] },
+  { type: 'kjopt', ikon: 'pose', navn: 'Noe er kjøpt', tekst: 'Når den andre markerer en gave eller et ønske som kjøpt.', valg: [] },
+];
+
+/** Ikonet for en varseltype (brukes også i bjella) */
+export const varselIkon = (type: string) => [...TYPER, ...AKTIVITET].find((t) => t.type === type)?.ikon ?? 'bjelle';
+
 const dagerNavn = (d: number) => (d === 0 ? 'Samme dag' : d === 1 ? '1 dag før' : d % 7 === 0 ? `${d / 7} ${d === 7 ? 'uke' : 'uker'} før` : `${d} dager før`);
 
 const erIos = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -130,6 +141,33 @@ export function Varsler() {
   const sett = (type: VarselType, endring: Partial<VarselInnstillinger['typer'][VarselType]>) =>
     endre({ ...inn, typer: { ...inn.typer, [type]: { ...inn.typer[type], ...endring } } });
 
+  const typeRad = (t: typeof TYPER[number]) => {
+    const v = inn.typer[t.type];
+    return (
+      <div className="varseltype" key={t.type}>
+        <label className="rad" style={{ cursor: 'pointer', borderBottom: 0 }}>
+          <IkonBoble ikon={t.ikon} storrelse="liten" />
+          <span className="hoved"><span className="navn">{t.navn}</span><span className="info" style={{ whiteSpace: 'normal' }}>{t.tekst}</span></span>
+          <input type="checkbox" className="bryter" checked={v.pa} onChange={(e) => sett(t.type, { pa: e.target.checked })} />
+        </label>
+        {v.pa && t.valg.length > 0 && (
+          <div className="valgchips varsel-valg" role="group" aria-label={`Når for ${t.navn}`}>
+            {t.valg.map((d) => {
+              const pa = v.dager.includes(d);
+              return (
+                <button key={d} type="button" role="checkbox" aria-checked={pa}
+                  // Minst ett tidspunkt må være valgt
+                  onClick={() => !(pa && v.dager.length === 1) && sett(t.type, { dager: pa ? v.dager.filter((x) => x !== d) : [...v.dager, d].sort((a, b) => b - a) })}>
+                  {pa && <Ikon navn="sjekk" storrelse={14} />}{dagerNavn(d)}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   let enhetsstatus;
   if (!stottes() && erIos() && !fraHjemskjerm()) {
     enhetsstatus = (
@@ -210,40 +248,20 @@ export function Varsler() {
           <span className="hoved">
             <span className="navn" style={{ whiteSpace: 'normal' }}>Skjul detaljer på låseskjermen</span>
             <span className="info" style={{ whiteSpace: 'normal' }}>{inn.skjulDetaljer
-              ? 'Varslene sier bare at det er noe nytt i Sulamitten – ingen navn, gaver eller avtaler. Åpne appen for å se hva.'
+              ? 'Varslene sier bare at det er noe nytt i Sulamitten – ingen navn, gaver eller avtaler. Trykk på varselet, så ser du hva det gjaldt i appen.'
               : 'Varslene viser navn, gaver og avtaler. Slå på hvis andre ofte ser telefonen din.'}</span>
           </span>
           <input type="checkbox" className="bryter" checked={!!inn.skjulDetaljer} onChange={(e) => endre({ ...inn, skjulDetaljer: e.target.checked })} />
         </label>
 
-        <div className="varseltyper">
-          {TYPER.map((t) => {
-            const v = inn.typer[t.type];
-            return (
-              <div className="varseltype" key={t.type}>
-                <label className="rad" style={{ cursor: 'pointer', borderBottom: 0 }}>
-                  <IkonBoble ikon={t.ikon} storrelse="liten" />
-                  <span className="hoved"><span className="navn">{t.navn}</span><span className="info" style={{ whiteSpace: 'normal' }}>{t.tekst}</span></span>
-                  <input type="checkbox" className="bryter" checked={v.pa} onChange={(e) => sett(t.type, { pa: e.target.checked })} />
-                </label>
-                {v.pa && t.valg.length > 0 && (
-                  <div className="valgchips varsel-valg" role="group" aria-label={`Når for ${t.navn}`}>
-                    {t.valg.map((d) => {
-                      const pa = v.dager.includes(d);
-                      return (
-                        <button key={d} type="button" role="checkbox" aria-checked={pa}
-                          // Minst ett tidspunkt må være valgt
-                          onClick={() => !(pa && v.dager.length === 1) && sett(t.type, { dager: pa ? v.dager.filter((x) => x !== d) : [...v.dager, d].sort((a, b) => b - a) })}>
-                          {pa && <Ikon navn="sjekk" storrelse={14} />}{dagerNavn(d)}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+        <div className="varseltyper">{TYPER.map(typeRad)}</div>
+      </section>
+
+      <section className="kort">
+        <div className="kort-hode">
+          <div className="tittel"><h2>Når den andre gjør noe</h2><span className="dempet liten">I delte lister. Kommer innen et kvarter, men ikke mellom 22 og 07 – da venter det til morgenen.</span></div>
         </div>
+        <div className="varseltyper">{AKTIVITET.map(typeRad)}</div>
       </section>
     </>
   );

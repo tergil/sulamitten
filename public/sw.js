@@ -1,6 +1,9 @@
-// Service worker: bare push-varsler. Ingen mellomlagring – appen hentes alltid fersk fra nettet.
+// Service worker: bare push-varsler. Ingen mellomlagring av appen – den hentes alltid fersk fra nettet.
+// Eneste som lagres, er hvor et varsel skal åpne (cachen «sulamitten-varsel», hentes og slettes av appen i main.tsx).
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
+
+const MAAL = () => `${self.registration.scope}varsel-maal`;
 
 self.addEventListener('push', (e) => {
   let d = {};
@@ -13,18 +16,23 @@ self.addEventListener('push', (e) => {
   }));
 });
 
-// Trykk på varselet åpner appen på riktig side (eller fokuserer et åpent vindu)
+// Trykk på varselet åpner appen på riktig side. To veier, fordi iPhone ofte åpner startsiden og ikke lenken:
+//  1. Målet huskes i cachen – appen leser det når den starter eller kommer fram (main.tsx).
+//  2. Er appen allerede åpen, får den beskjed direkte (postMessage) og bytter side selv.
 self.addEventListener('notificationclick', (e) => {
   e.notification.close();
   const url = (e.notification.data && e.notification.data.url) || self.registration.scope;
   e.waitUntil((async () => {
+    try {
+      const cache = await caches.open('sulamitten-varsel');
+      await cache.put(MAAL(), new Response(JSON.stringify({ url, tid: Date.now() }), { headers: { 'Content-Type': 'application/json' } }));
+    } catch { /* uten cache virker fortsatt vei 2 og lenken i openWindow */ }
     const vinduer = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    for (const v of vinduer) {
-      if ('focus' in v) {
-        await v.focus();
-        if ('navigate' in v) await v.navigate(url).catch(() => {});
-        return;
-      }
+    const vindu = vinduer.find((v) => 'focus' in v);
+    if (vindu) {
+      vindu.postMessage({ type: 'aapne', url });
+      await vindu.focus().catch(() => {});
+      return;
     }
     await self.clients.openWindow(url);
   })());

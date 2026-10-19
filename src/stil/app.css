@@ -790,7 +790,16 @@ body.drar-punkt [data-dra-id] { transition: transform .15s ease; }
   background: color-mix(in srgb, var(--farge) 18%, var(--flate)); border-left: 3px solid var(--farge); color: var(--blekk);
 }
 .kal-flere { font-size: 11px; color: var(--dempet); padding: 0 4px; }
+/* Helligdager (røde dager) og merkedager: rød dato, navnet ved datoen. Ikke avtaler – ingen fargestrek. */
+.kal-merkedag { margin-left: var(--a2); vertical-align: 1px; font-weight: 600; text-transform: none; letter-spacing: 0; }
+.kal-dag-hode .kal-dagnavn { display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--a2); }
+.kal-dag-hode .kal-merkedag { margin-left: 0; }
+.kal-dag.rod .kal-dagnavn, .kal-celle.rod:not(.i-dag) .kal-nr, .kal-rod-nr { color: var(--feil); }
+.kal-rod-nr { font-weight: 700; font-size: 0.75rem; }
+.kal-celle-merkedag { font-size: 11px; line-height: 1.25; color: var(--dempet); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 2px; }
+.kal-celle.rod .kal-celle-merkedag { color: var(--feil); }
 @media (max-width: 640px) {
+  .kal-celle-merkedag { display: none; }
   .kal-celle { min-height: 54px; padding: 3px; }
   .kal-biter { flex-direction: row; flex-wrap: wrap; gap: 3px; }
   .kal-bit { width: 8px; height: 8px; padding: 0; border: 0; border-radius: 50%; background: var(--farge); font-size: 0; }
@@ -952,3 +961,23 @@ body:has(.fab) .toast { bottom: calc(var(--nav-hoyde) + env(safe-area-inset-bott
   .topp-oversikt .topp-merke { display: none; }
   .topp-oversikt .topp-tittel { display: inline; }
 }
+
+/* ---------------------------------------------------------------- Bjella: varsler i appen */
+
+.topp-bjelle { position: relative; flex: none; color: var(--blekk); }
+.topp-bjelle[aria-current='page'] { background: var(--aksent-myk); color: var(--aksent); }
+/* Antall uleste: statusrød med bakgrunnsfarge som tekst (god kontrast i lyst og mørkt tema) */
+.bjelle-tall {
+  position: absolute; top: 4px; right: 3px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px;
+  display: inline-grid; place-items: center; background: var(--feil); color: var(--bg);
+  font-size: 11px; font-weight: 800; line-height: 1; box-shadow: 0 0 0 2px var(--bg); font-variant-numeric: tabular-nums;
+}
+.innboks-gruppe + .innboks-gruppe { margin-top: var(--a3); }
+.innboks-gruppe .kal-mini-dag { padding-top: 0; padding-bottom: var(--a1); }
+.innboks-rad { align-items: flex-start; padding-top: var(--a3); padding-bottom: var(--a3); }
+.innboks-rad .liste-ikon { margin-top: 2px; }
+.innboks-rad .hoved .navn { white-space: normal; }
+.innboks-rad .hoved .info { white-space: pre-line; font-size: 0.8125rem; color: var(--blekk-2); margin-top: 2px; }
+.innboks-rad.ny .hoved .navn { font-weight: 700; }
+.innboks-tid { font-size: 0.75rem; color: var(--dempet); margin-top: 4px; }
+.innboks-prikk { flex: none; width: 10px; height: 10px; margin-top: 6px; border-radius: 50%; background: var(--feil); }

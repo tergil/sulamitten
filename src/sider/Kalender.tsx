@@ -13,6 +13,7 @@ import {
   UKEDAGER_KORT, angreEndring, kalenderKategorier, endreForekomst, kommende, gjentakTekst, kalenderPoster, leggTilDager, mandagI, paaDato,
   slettForekomst, ukedag, type Avtale, type KalenderPost, type Modus,
 } from '../logikk/kalender';
+import { merkedagerMellom, type Merkedag } from '../logikk/helligdager';
 import { Ark, Fargevalg, Felt, Ikon, Prikk, Segment, useBekreft } from '../ui/felles';
 
 // ---------------------------------------------------------------- Hjelpere
@@ -47,6 +48,24 @@ function useKategorier(): KalenderKategoriDef[] {
 
 /** Farge for en post: kategorifargen, eller nøytral når kategorien er slettet */
 const fargeVar = (farge: number) => (farge >= 0 ? `var(--k${farge})` : 'var(--noytral-flyt)');
+
+/** Helligdager og merkedager per dato. Merkedagene (morsdag, kanelbollens dag …) kan skjules – røde dager vises alltid. */
+function useMerkedager(fra: string, til: string, skjulAndre: boolean): Map<string, Merkedag[]> {
+  return useMemo(() => {
+    const ut = new Map<string, Merkedag[]>();
+    for (const m of merkedagerMellom(fra, til)) {
+      if (skjulAndre && !m.rod) continue;
+      ut.set(m.dato, [...(ut.get(m.dato) ?? []), m]);
+    }
+    return ut;
+  }, [fra, til, skjulAndre]);
+}
+
+/** «Grunnlovsdag» som merkelapp ved datoen – røde dager i rødt */
+function MerkedagLapper({ dager }: { dager?: Merkedag[] }) {
+  if (!dager?.length) return null;
+  return <>{dager.map((m) => <span key={m.navn} className={`merkelapp kal-merkedag${m.rod ? ' feil' : ''}`} title={m.rod ? 'Helligdag' : 'Merkedag'}>{m.navn}</span>)}</>;
+}
 
 /** Personer (Terje, Ingrid) og familiemedlemmer (barna) */
 function useFolk() {
@@ -84,14 +103,16 @@ function PostRad({ post, navn, aapne }: { post: KalenderPost; navn: (id: string)
   );
 }
 
-function DagListe({ dato, poster, navn, aapne, nyAvtale }: {
+function DagListe({ dato, poster, navn, aapne, nyAvtale, merkedager }: {
   dato: string; poster: KalenderPost[]; navn: (id: string) => string | undefined; aapne: (p: KalenderPost) => void; nyAvtale: () => void;
+  merkedager?: Merkedag[];
 }) {
   const idag = iDag();
+  const rod = merkedager?.some((m) => m.rod);
   return (
-    <div className={`kal-dag${dato === idag ? ' i-dag' : ''}${dato < idag ? ' forbi' : ''}`}>
+    <div className={`kal-dag${dato === idag ? ' i-dag' : ''}${dato < idag ? ' forbi' : ''}${rod ? ' rod' : ''}`}>
       <div className="kal-dag-hode">
-        <span className="kal-dagnavn">{dagTittel(dato)}</span>
+        <span className="kal-dagnavn">{dagTittel(dato)}<MerkedagLapper dager={merkedager} /></span>
         {dato === idag && <span className="merkelapp aksent">I dag</span>}
         {dato < idag && <span className="merkelapp">Har vært</span>}
         <button className="knapp flat ikon liten" onClick={nyAvtale} aria-label={`Ny avtale ${dagTittel(dato)}`}><Ikon navn="pluss" storrelse={16} /></button>
@@ -120,6 +141,8 @@ export function Kalender({ gaaTil }: { gaaTil: (r: string) => void }) {
   const [valgt, setValgt] = useState(idag);
   const [ark, setArk] = useState<{ post?: KalenderPost; dato: string } | null>(null);
   const [abonner, setAbonner] = useState(false);
+  const [skjulMerkedager, setSkjulMerkedagerRaa] = useState(() => lesValg('familie.kalender.merkedager') === 'skjul');
+  const setSkjulMerkedager = (v: boolean) => { setSkjulMerkedagerRaa(v); lagreValg('familie.kalender.merkedager', v ? 'skjul' : 'vis'); };
 
   const forsteIMnd = `${anker.slice(0, 7)}-01`;
   const fra = visning === 'uke' ? mandagI(anker) : mandagI(forsteIMnd);
@@ -128,6 +151,7 @@ export function Kalender({ gaaTil }: { gaaTil: (r: string) => void }) {
   const dager = useMemo(() => { const ut: string[] = []; for (let d = fra; d <= til; d = leggTilDager(d, 1)) ut.push(d); return ut; }, [fra, til]);
   const poster = useMemo(() => kalenderPoster(hendelser, lister, punkter, fra, til, undefined, kategorier), [hendelser, lister, punkter, fra, til, kategorier]);
   const paa = (d: string) => poster.filter((p) => paaDato(p, d));
+  const merkedager = useMerkedager(fra, til, skjulMerkedager);
 
   const flytt = (retning: -1 | 1) => {
     if (visning === 'uke') setAnker(leggTilDager(anker, 7 * retning));
@@ -169,7 +193,7 @@ export function Kalender({ gaaTil }: { gaaTil: (r: string) => void }) {
 
       {visning === 'uke' ? (
         <section className="kort kal-uke">
-          {dager.map((d) => <DagListe key={d} dato={d} poster={paa(d)} navn={navn} aapne={aapne} nyAvtale={() => setArk({ dato: d })} />)}
+          {dager.map((d) => <DagListe key={d} dato={d} poster={paa(d)} navn={navn} aapne={aapne} nyAvtale={() => setArk({ dato: d })} merkedager={merkedager.get(d)} />)}
         </section>
       ) : (
         <div className="rutenett to-en">
@@ -179,10 +203,14 @@ export function Kalender({ gaaTil }: { gaaTil: (r: string) => void }) {
               {dager.map((d) => {
                 const her = paa(d);
                 const utenfor = d.slice(0, 7) !== forsteIMnd.slice(0, 7);
+                const dagens = merkedager.get(d);
+                const rod = dagens?.some((m) => m.rod);
                 return (
                   <button key={d} role="gridcell" aria-pressed={d === valgt} onClick={() => setValgt(d)}
-                    className={`kal-celle${utenfor ? ' utenfor' : ''}${d === idag ? ' i-dag' : ''}`} aria-label={`${dagTittel(d)}: ${her.length} avtaler`}>
+                    className={`kal-celle${utenfor ? ' utenfor' : ''}${d === idag ? ' i-dag' : ''}${rod ? ' rod' : ''}`}
+                    aria-label={`${dagTittel(d)}${dagens ? ` (${dagens.map((m) => m.navn).join(', ')})` : ''}: ${her.length} avtaler`}>
                     <span className="kal-nr">{Number(d.slice(8))}</span>
+                    {dagens && <span className="kal-celle-merkedag">{dagens.map((m) => m.navn).join(' · ')}</span>}
                     <span className="kal-biter">
                       {her.slice(0, 3).map((p) => <span key={p.nokkel} className="kal-bit" style={{ ['--farge' as string]: fargeVar(p.farge) }}>{p.fra ? `${p.fra} ` : ''}{p.tittel}</span>)}
                       {her.length > 3 && <span className="kal-flere">+{her.length - 3}</span>}
@@ -193,7 +221,7 @@ export function Kalender({ gaaTil }: { gaaTil: (r: string) => void }) {
             </div>
           </section>
           <section className="kort">
-            <DagListe dato={valgt} poster={paa(valgt)} navn={navn} aapne={aapne} nyAvtale={() => setArk({ dato: valgt })} />
+            <DagListe dato={valgt} poster={paa(valgt)} navn={navn} aapne={aapne} nyAvtale={() => setArk({ dato: valgt })} merkedager={merkedager.get(valgt)} />
           </section>
         </div>
       )}
@@ -202,7 +230,11 @@ export function Kalender({ gaaTil }: { gaaTil: (r: string) => void }) {
         {kategorier.map((k) => <span key={k.id}><Prikk farge={k.farge} />{k.navn}</span>)}
         <span><Prikk farge={0} />Bursdager</span>
         <span><Prikk farge={3} />Frister</span>
+        <span><span className="kal-rod-nr" aria-hidden="true">17</span>Røde dager</span>
         <button className="lenkeknapp" onClick={() => setKategoriArk(true)}>Endre kategorier</button>
+        <button className="lenkeknapp" onClick={() => setSkjulMerkedager(!skjulMerkedager)}>
+          {skjulMerkedager ? 'Vis merkedager' : 'Skjul merkedager'}
+        </button>
       </div>
 
       <button className="fab" onClick={() => setArk({ dato: nyDato })}><Ikon navn="pluss" storrelse={22} />Ny avtale</button>
@@ -491,6 +523,7 @@ export function KommendeKort({ gaaTil }: { gaaTil: (r: string) => void }) {
   const neste = useMemo(() => kommende(
     kalenderPoster(hendelser, lister, punkter, idag, leggTilDager(idag, 60), { anledninger: true, frister: false }, kategorier), naa, 5,
   ), [hendelser, lister, punkter, kategorier, naa, idag]);
+  const merkedager = useMerkedager(idag, leggTilDager(idag, 60), false);
   if (!lastet) return null;
 
   const aapne = (p: KalenderPost) => gaaTil(p.url ? p.url.replace(/^#\//, '') : 'kalender');
@@ -509,7 +542,7 @@ export function KommendeKort({ gaaTil }: { gaaTil: (r: string) => void }) {
       {dager.length === 0 && <p className="dempet liten kal-tom">Kalenderen er tom akkurat nå. Det betyr ikke nødvendigvis at dere har fri.</p>}
       {dager.map((d) => (
         <div className="kal-mini" key={d}>
-          <div className={`kal-mini-dag${d === idag ? ' i-dag' : ''}`}>{dagTekst(d)}</div>
+          <div className={`kal-mini-dag${d === idag ? ' i-dag' : ''}`}>{dagTekst(d)}<MerkedagLapper dager={merkedager.get(d)} /></div>
           <div className="liste">
             {neste.filter((x) => x.dag === d).map(({ post }) => <PostRad key={post.nokkel} post={post} navn={navn} aapne={() => aapne(post)} />)}
           </div>

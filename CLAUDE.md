@@ -30,13 +30,21 @@ Personlige arbeidsinstrukser ligger i `~/.claude/CLAUDE.md`. Denne fila handler 
   Viser også bursdager fra gaveårene og frister fra listene. `hvem` = personer + `FellesDok.familie` (barna),
   `ansvarlig` = den som henter/leverer. Abonnement for telefonens kalender: Edge Function «kalender»
   (`?n=<FellesDok.kalenderNokkel>`, utvidede forekomster som ICS, `logikk/ics.ts`).
+  Helligdager og merkedager (`logikk/helligdager.ts`, regnes ut – lagres ikke) vises som merkelapp ved datoen, røde dager
+  med rød dato. De er ikke avtaler (`kalenderPoster` tar dem ikke med) og er derfor heller ikke i abonnementet.
 - **Navigasjon:** Oversikt · Kalender · Lister · Økonomi (fanene Oppfølging · Budsjett · Sparemål, på alle skjermstørrelser) · Mer. Oversikt viser de neste 5 avtalene
   (det som er over forsvinner, `kommende()`/`erForbi()`), huskelappen og økonomien. Snarveien nede til høyre på Oversikt følger
   seksjonen man ser på (`data-fab`: Ny avtale → Ny liste → Før utgift). Felles/privat-bryteren står over økonomien.
 - **Varsler** (Oppsett → Varsler, `sider/Varsler.tsx`): push til iPhone (hjemskjerm, iOS 16.4+) og Android.
   Edge Function «varsler» kjøres hvert kvarter av pg_cron (daglige varsler i første kvarter av valgt time, «før avtale» hver gang), regner ut med `logikk/varsler.ts` og sender til brukerne som
   har valgt den timen. `public/sw.js` viser varselet (ingen mellomlagring). «Skjul detaljer» (`skjulDetaljer`, `utenDetaljer()`)
-  gir varsler uten navn, gaver og avtaler på låseskjermen.
+  gir varsler uten navn, gaver og avtaler på låseskjermen – og åpner bjella.
+  **Bjella** (`#/innboks`, `sider/Innboks.tsx`, `data/innboks.ts`): alt som varsles lagres også i `varsel_innboks` med alle detaljer,
+  også for den som ikke har push. Samlede og skjulte push-varsler åpner bjella.
+  **Trykk på varsel:** sw.js legger målet i cachen «sulamitten-varsel» og sender `postMessage`; `main.tsx` bytter side
+  (iPhone åpner ofte startsiden i stedet for lenken).
+  **Delte lister** (`nyListe`, `nyttPunkt`, `gaveide`, `kjopt`): databasetriggere fyller `aktivitet`, funksjonen lager ett varsel
+  per liste og type (`aktivitetsVarsler()`) og tømmer tabellen. Ikke mellom 22 og 07. «Kjøpt» = status `kjopt` (ikke «gjort»).
 - **Deling** (Valg → Del liste): som tekst (øyeblikksbilde) eller lenke `#/delt/<nøkkel>` som vises uten innlogging
   (`sider/Delt.tsx`). Bare det som ikke er kjøpt/gjort deles, og aldri vedlegg.
 - Status: POC i grenen `poc`.
@@ -72,7 +80,7 @@ npm run vapid        # nøkler for push-varsler: offentlig → src/data/varselno
 | `supabase/skjema.sql` | Budsjettdokumentene + RLS-regler. Kjøres i Supabase SQL Editor |
 | `supabase/oppfolging.sql` | Tabellene `utgift` og `saldo` (egne rader, `eier` null = felles) |
 | `supabase/kalender.sql` | Kalender: tabellen `hendelse` (felles), og timejobben settes til hvert kvarter |
-| `supabase/varsler.sql` | Varsler: `varsel_abonnement` (enheter), `varsel_innstilling`, `varsel_sendt`. Timejobben står i Data/varsler-oppsett.txt |
+| `supabase/varsler.sql` | Varsler: `varsel_abonnement` (enheter), `varsel_innstilling`, `varsel_sendt`, `varsel_innboks` (bjella), `aktivitet` + triggere på `liste`/`listepunkt`. Timejobben står i Data/varsler-oppsett.txt |
 | `supabase/kilde/`, `supabase/functions/` | Edge Functions «varsler» og «kalender» (kilde + genererte filer som limes inn i Supabase) |
 | `supabase/lister.sql` | Tabellene `liste` (`eier` null = felles) og `listepunkt` (arver synlighet fra listen), funksjonen `hent_delt_liste` (delingslenker) og Storage-bøtta `vedlegg` |
 | `scripts/` | Tester, Excel-import, datasjekk |

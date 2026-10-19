@@ -1,5 +1,5 @@
 // OPPDIKTEDE demodata for lokal kjøring. Ingen ekte tall her – repoet kan være offentlig.
-import type { FellesDok, Hendelse, Liste, PrivatDok, Post, Punkt, Revisjon, Saldo, Utgift } from './modell';
+import type { FellesDok, Hendelse, InnboksVarsel, Liste, PrivatDok, Post, Punkt, Revisjon, Saldo, Utgift } from './modell';
 import { foreslaOverforinger, iDag, kopierRevisjon } from '../logikk/beregning';
 import { flyttMaaned, kontoPlan, maanedAv, revisjonForMaaned } from '../logikk/oppfolging';
 import { FORSLAG_DAGER, LISTETYPER, kalenderLuker } from '../logikk/lister';
@@ -264,5 +264,15 @@ export function demoHendelser(idag = iDag()): Hendelse[] {
     { id: 'demo-h5', tittel: 'Foreldremøte', kategori: 'mote', dato: om(9), fra: '19:00', til: '20:30', hvem: ['kari', 'ola'], sted: 'Barnehagen' },
     { id: 'demo-h6', tittel: 'Middag hos naboene', kategori: 'sosialt', dato: om(6 - ukedag + 7 > 7 ? 6 - ukedag : 6 - ukedag + 7), fra: '18:00', hvem: ['kari', 'ola', 'emma', 'jonas'] },
     { id: 'demo-h7', tittel: 'Besteforeldre på besøk', kategori: 'besok', dato: om(13 - ukedag + 6), sluttDato: om(13 - ukedag + 7), hvem: [] },
+  ];
+}
+
+/** Bjella i demomodus: noen oppdiktede varsler (det ene ulest) */
+export function demoInnboks(naa = new Date()): InnboksVarsel[] {
+  const siden = (min: number) => new Date(naa.getTime() - min * 60_000).toISOString();
+  return [
+    { id: 'demo-v1', type: 'nyttPunkt', tittel: 'Nytt i Handleliste', tekst: 'Kari la til melk, rugbrød og kaffe.', url: '#/lister', opprettet: siden(25), lest: false },
+    { id: 'demo-v2', type: 'avtaler', tittel: 'I dag: 2 avtaler', tekst: '16:00 Henting barnehagen – Ola\n18:30 Fotballtrening', url: '#/kalender', opprettet: siden(60 * 7), lest: true },
+    { id: 'demo-v3', type: 'bursdag', tittel: 'Mormor har bursdag om 21 dager', tekst: 'Ingen gave kjøpt ennå.', url: '#/lister', opprettet: siden(60 * 31), lest: true },
   ];
 }

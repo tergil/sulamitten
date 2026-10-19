@@ -41,6 +41,26 @@ const STANDARD_VARSLER = {
 		avtaleFor: {
 			pa: true,
 			dager: [0]
+		},
+		/** Den andre lager en ny delt liste */
+		nyListe: {
+			pa: true,
+			dager: [0]
+		},
+		/** Den andre legger til noe i en delt liste */
+		nyttPunkt: {
+			pa: true,
+			dager: [0]
+		},
+		/** Den andre legger til en gaveidé i et felles gaveår */
+		gaveide: {
+			pa: true,
+			dager: [0]
+		},
+		/** Den andre markerer noe som kjøpt i en delt liste */
+		kjopt: {
+			pa: true,
+			dager: [0]
 		}
 	}
 };
@@ -731,34 +751,120 @@ function forVarsler(hendelser, naa, kal, vindu = 15) {
 	}
 	return ut;
 }
-/** Mange varsler samme dag blir ett samlet varsel, så telefonen ikke fylles opp */
-function slaaSammen(varsler, maks = 3) {
+/** Varseltyper for det den andre gjør – sendes fortløpende, ikke på brukerens klokkeslett */
+const AKTIVITETSTYPER = [
+	"nyListe",
+	"nyttPunkt",
+	"gaveide",
+	"kjopt"
+];
+/** «Melk, brød og egg» – maks fire, resten som «og 3 til» */
+function opplisting(tekster, maks = 4) {
+	if (tekster.length <= 1) return tekster[0] ?? "";
+	if (tekster.length <= maks) return `${tekster.slice(0, -1).join(", ")} og ${tekster[tekster.length - 1]}`;
+	return `${tekster.slice(0, maks).join(", ")} og ${tekster.length - maks} til`;
+}
+/**
+* Varsler om det andre har gjort i delte lister siden sist: nye lister, nye punkter, gaveideer og kjøp.
+* Én melding per liste og type, så ti nye ting i handlelisten blir ett varsel. Bare det som fortsatt er slik
+* (punktet finnes, er fortsatt kjøpt) varsles – angrer man med en gang, blir det ikke noe varsel.
+* Listene og punktene skal være de mottakeren kan se (felles).
+*/
+function aktivitetsVarsler(aktiviteter, lister, punkter, mottaker, innstillinger, navn) {
+	const t = medStandard(innstillinger).typer;
+	const listeMap = new Map(lister.filter((l) => !l.mal).map((l) => [l.id, l]));
+	const punktMap = new Map(punkter.map((p) => [p.id, p]));
+	const andres = aktiviteter.filter((a) => a.bruker !== mottaker && listeMap.has(a.listeId));
+	const maksId = Math.max(0, ...andres.map((a) => a.id));
+	const ut = [];
+	const legg = (type, listeId, bruker, tittel, tekst, url = `#/lister/${listeId}`) => {
+		const nokkel = `aktivitet:${type}:${listeId}:${bruker}:${maksId}`;
+		ut.push({
+			type,
+			nokkel,
+			nokler: [nokkel],
+			tittel,
+			tekst,
+			url
+		});
+	};
+	const hvem = (bruker) => navn(bruker) ?? "Noen";
+	const nyeLister = /* @__PURE__ */ new Set();
+	for (const a of andres.filter((x) => x.hva === "liste")) {
+		if (nyeLister.has(a.listeId)) continue;
+		nyeLister.add(a.listeId);
+		if (!t.nyListe.pa) continue;
+		const l = listeMap.get(a.listeId);
+		const antall = punkter.filter((p) => p.listeId === l.id && !p.forelderId).length;
+		legg("nyListe", l.id, a.bruker, `${hvem(a.bruker)} lagde en ny liste: ${l.navn}`, antall ? `${antall} ${antall === 1 ? "punkt" : "punkter"} så langt.` : "Tom foreløpig – klar til å fylles.");
+	}
+	const grupper = /* @__PURE__ */ new Map();
+	const sett = /* @__PURE__ */ new Set();
+	for (const a of andres) {
+		if (a.hva === "liste" || !a.punktId || nyeLister.has(a.listeId)) continue;
+		const p = punktMap.get(a.punktId);
+		if (!p) continue;
+		const liste = listeMap.get(a.listeId);
+		const kjoptNaa = p.status === "kjopt" && LISTETYPER[liste.type].statuser.some((s) => s.id === "kjopt");
+		const hva = kjoptNaa ? "kjopt" : a.hva === "punkt" ? liste.type === "gaveaar" && p.forelderId ? "ideer" : "nye" : null;
+		if (!hva || a.hva === "status" && !kjoptNaa || sett.has(`${hva}:${p.id}`)) continue;
+		sett.add(`${hva}:${p.id}`);
+		const nokkel = `${a.bruker}|${a.listeId}`;
+		const g = grupper.get(nokkel) ?? {
+			bruker: a.bruker,
+			liste,
+			nye: [],
+			ideer: [],
+			kjopt: []
+		};
+		g[hva].push(p);
+		grupper.set(nokkel, g);
+	}
+	const mottakerAv = (p) => p.forelderId ? punktMap.get(p.forelderId)?.tekst : void 0;
+	for (const { bruker, liste, nye, ideer, kjopt } of grupper.values()) {
+		const h = hvem(bruker);
+		if (nye.length && t.nyttPunkt.pa) legg("nyttPunkt", liste.id, bruker, `Nytt i ${liste.navn}`, `${h} la til ${opplisting(nye.map((p) => p.tekst))}.`);
+		if (ideer.length && t.gaveide.pa) {
+			const til = [...new Set(ideer.map(mottakerAv).filter(Boolean))];
+			legg("gaveide", liste.id, bruker, ideer.length === 1 ? `${h} har en gaveidé til ${til[0] ?? "noen"}` : `${h} la inn ${ideer.length} gaveideer`, ideer.length === 1 ? `«${ideer[0].tekst}» · ${liste.navn}` : `Til ${opplisting(til)} · ${liste.navn}`);
+		}
+		if (kjopt.length && t.kjopt.pa) {
+			const gaver = liste.type === "gaveaar";
+			const til = [...new Set(kjopt.map(mottakerAv).filter(Boolean))];
+			const tittel = gaver ? kjopt.length === 1 ? `${h} kjøpte gave til ${til[0] ?? "noen"}` : `${h} kjøpte ${kjopt.length} gaver` : `${h} kjøpte ${kjopt.length === 1 ? `«${kjopt[0].tekst}»` : `${kjopt.length} ting`}`;
+			const tekst = gaver ? kjopt.length === 1 ? `«${kjopt[0].tekst}» · ${liste.navn}` : `Til ${opplisting(til)} · ${liste.navn}` : kjopt.length === 1 ? `Fra ${liste.navn}` : `${opplisting(kjopt.map((p) => p.tekst))} · ${liste.navn}`;
+			legg("kjopt", liste.id, bruker, tittel, tekst);
+		}
+	}
+	return ut;
+}
+/** Mange varsler blir ett samlet varsel, så telefonen ikke fylles opp. Det samlede åpner varslene i appen. */
+function slaaSammen(varsler, maks = 3, samletTittel = (n) => `${n} påminnelser i dag`) {
 	if (varsler.length <= maks) return varsler.map((v) => ({
 		tittel: v.tittel,
 		tekst: v.tekst,
 		url: v.url,
-		nokler: v.nokler
+		nokler: v.nokler,
+		type: v.type
 	}));
 	return [{
-		tittel: `${varsler.length} påminnelser i dag`,
+		tittel: samletTittel(varsler.length),
 		tekst: varsler.slice(0, 4).map((v) => v.tittel).join("\n") + (varsler.length > 4 ? `\n… og ${varsler.length - 4} til` : ""),
-		url: "#/oversikt",
+		url: "#/innboks",
 		nokler: varsler.flatMap((v) => v.nokler)
 	}];
 }
 /**
 * «Skjul detaljer»: det som vises på låseskjermen sier ikke hva det gjelder (navn, gaver, avtaler).
-* Lenken i varselet er den samme, så appen åpnes på riktig sted.
+* Varselet åpner varslene i appen (bjella), der detaljene står – ellers vet man ikke hva det gjaldt.
 */
-function utenDetaljer(meldinger, typer = []) {
-	return meldinger.map((m, i) => {
-		const forAvtale = typer[i] === "avtaleFor";
-		return {
-			...m,
-			tittel: "Sulamitten",
-			tekst: forAvtale ? "En avtale nærmer seg. Åpne appen for å se hvilken." : "Det er noe å huske på i dag. Åpne appen for å se hva."
-		};
-	});
+function utenDetaljer(meldinger) {
+	return meldinger.map((m) => ({
+		...m,
+		tittel: "Sulamitten",
+		tekst: m.type === "avtaleFor" ? "En avtale nærmer seg. Åpne appen for å se hvilken." : m.type && AKTIVITETSTYPER.includes(m.type) ? "Det er nytt i en delt liste. Åpne appen for å se hva." : "Det er noe å huske på i dag. Åpne appen for å se hva.",
+		url: "#/innboks"
+	}));
 }
 /** Dato, time og minutt fra midnatt akkurat nå i Norge (serveren går i UTC) */
 function norskTid(naa = /* @__PURE__ */ new Date()) {
@@ -861,7 +967,11 @@ async function send(db, enheter, melding) {
 				p256dh: e.p256dh,
 				auth: e.auth
 			}
-		}, JSON.stringify(melding), { TTL: 72e3 });
+		}, JSON.stringify({
+			tittel: melding.tittel,
+			tekst: melding.tekst,
+			url: melding.url
+		}), { TTL: 72e3 });
 		sendt++;
 	} catch (feil) {
 		const f = feil;
@@ -925,10 +1035,26 @@ async function behandle(req) {
 	const daglig = kropp.tving || minutt % 60 < 15;
 	const { data: innstillinger, error } = await db.from("varsel_innstilling").select("bruker, data");
 	if (error) return svar({ feil: error.message }, 500);
-	const aktuelle = (innstillinger ?? []).map((r) => ({
+	const brukere = (innstillinger ?? []).map((r) => ({
 		bruker: r.bruker,
 		inn: medStandard(r.data)
-	})).filter((r) => daglig && (kropp.tving || r.inn.time === time) || r.inn.typer.avtaleFor.pa);
+	}));
+	const dagligFor = (inn) => daglig && (!!kropp.tving || inn.time === time);
+	const natt = time < 7 || time >= 22;
+	let aktiviteter = [];
+	if (!natt || kropp.tving) {
+		const { data: rader } = await db.from("aktivitet").select("id, bruker, hva, liste_id, punkt_id, status").lt("tid", (/* @__PURE__ */ new Date(Date.now() - 6e4)).toISOString()).order("id").limit(2e3);
+		aktiviteter = (rader ?? []).map((r) => ({
+			id: Number(r.id),
+			bruker: r.bruker,
+			hva: r.hva,
+			listeId: r.liste_id,
+			punktId: r.punkt_id,
+			status: r.status
+		}));
+	}
+	if (time === 3 && minutt % 60 < 15) await db.from("varsel_innboks").delete().lt("opprettet", (/* @__PURE__ */ new Date(Date.now() - 5184e6)).toISOString());
+	const aktuelle = brukere.filter((r) => dagligFor(r.inn) || r.inn.typer.avtaleFor.pa || aktiviteter.length > 0);
 	if (!aktuelle.length) return svar({
 		dato,
 		time,
@@ -937,62 +1063,84 @@ async function behandle(req) {
 	const { lister, punkter, hendelser, felles } = await hentAlt(db);
 	const navn = navnFra(felles);
 	const voksne = new Set((felles?.personer ?? []).map((x) => x.id));
+	const personer = /* @__PURE__ */ new Map();
+	async function personFor(bruker) {
+		if (!personer.has(bruker)) {
+			const { data: u } = await db.auth.admin.getUserById(bruker);
+			const epost = u?.user?.email?.toLowerCase();
+			personer.set(bruker, felles?.personer.find((x) => x.epost.toLowerCase() === epost));
+		}
+		return personer.get(bruker);
+	}
+	for (const a of aktiviteter) await personFor(a.bruker);
 	const resultat = {};
 	for (const { bruker, inn } of aktuelle) {
 		const synlige = lister.filter((x) => x.eier === null || x.eier === bruker).map((x) => x.liste);
 		const ider = new Set(synlige.map((x) => x.id));
+		const synligePunkter = punkter.filter((x) => ider.has(x.listeId));
 		const kandidater = [];
-		if (daglig && (kropp.tving || inn.time === time)) kandidater.push(...beregnVarsler(synlige, punkter.filter((x) => ider.has(x.listeId)), inn, dato, {
+		if (dagligFor(inn)) kandidater.push(...beregnVarsler(synlige, synligePunkter, inn, dato, {
 			hendelser,
 			navn
 		}));
-		if (inn.typer.avtaleFor.pa && hendelser.length) {
-			const { data: u } = await db.auth.admin.getUserById(bruker);
-			const epost = u?.user?.email?.toLowerCase();
-			const personId = felles?.personer.find((x) => x.epost.toLowerCase() === epost)?.id;
-			kandidater.push(...forVarsler(hendelser, {
-				dato,
-				minutt
-			}, {
-				hendelser,
-				navn,
-				personId,
-				voksne
-			}));
-		}
+		if (inn.typer.avtaleFor.pa && hendelser.length) kandidater.push(...forVarsler(hendelser, {
+			dato,
+			minutt
+		}, {
+			hendelser,
+			navn,
+			personId: (await personFor(bruker))?.id,
+			voksne
+		}));
+		const delteLister = synlige.filter((l) => !l.privat);
+		if (aktiviteter.length) kandidater.push(...aktivitetsVarsler(aktiviteter, delteLister, synligePunkter, bruker, inn, (b) => personer.get(b)?.navn));
 		if (!kandidater.length) continue;
 		const { data: sendtFor } = await db.from("varsel_sendt").select("nokkel").eq("bruker", bruker).in("nokkel", kandidater.map((k) => k.nokkel));
 		const sendt = new Set((sendtFor ?? []).map((r) => r.nokkel));
 		const nye = kandidater.filter((k) => !sendt.has(k.nokkel));
 		if (!nye.length) continue;
+		const { error: innboksFeil } = await db.from("varsel_innboks").insert(nye.map((v) => ({
+			bruker,
+			type: v.type,
+			tittel: v.tittel,
+			tekst: v.tekst,
+			url: v.url
+		})));
+		if (innboksFeil) console.error("Innboks:", innboksFeil.message);
+		const huskes = nye.filter((v) => !AKTIVITETSTYPER.includes(v.type)).flatMap((v) => v.nokler);
+		if (huskes.length) await db.from("varsel_sendt").upsert(huskes.map((nokkel) => ({
+			bruker,
+			nokkel
+		})), {
+			onConflict: "bruker,nokkel",
+			ignoreDuplicates: true
+		});
 		const { data: enheter } = await db.from("varsel_abonnement").select("id, bruker, endpoint, p256dh, auth").eq("bruker", bruker);
 		if (!enheter?.length) continue;
-		let antall = 0;
-		const forAvtale = nye.filter((v) => v.type === "avtaleFor");
-		const alleMeldinger = [...forAvtale.map((v) => ({
+		const enkelt = (v) => ({
 			tittel: v.tittel,
 			tekst: v.tekst,
 			url: v.url,
-			nokler: v.nokler
-		})), ...slaaSammen(nye.filter((v) => v.type !== "avtaleFor"))];
-		const meldinger = inn.skjulDetaljer ? utenDetaljer(alleMeldinger, forAvtale.map((v) => v.type)) : alleMeldinger;
-		for (const melding of meldinger) if (await send(db, enheter, melding)) {
-			antall++;
-			await db.from("varsel_sendt").upsert(melding.nokler.map((nokkel) => ({
-				bruker,
-				nokkel
-			})), {
-				onConflict: "bruker,nokkel",
-				ignoreDuplicates: true
-			});
-		}
+			nokler: v.nokler,
+			type: v.type
+		});
+		const alleMeldinger = [
+			...nye.filter((v) => v.type === "avtaleFor").map(enkelt),
+			...slaaSammen(nye.filter((v) => v.type !== "avtaleFor" && !AKTIVITETSTYPER.includes(v.type))),
+			...slaaSammen(nye.filter((v) => AKTIVITETSTYPER.includes(v.type)), 2, (n) => `${n} nye ting i delte lister`)
+		];
+		const meldinger = inn.skjulDetaljer ? utenDetaljer(alleMeldinger) : alleMeldinger;
+		let antall = 0;
+		for (const melding of meldinger) if (await send(db, enheter, melding)) antall++;
 		resultat[bruker] = antall;
 	}
+	if (aktiviteter.length) await db.from("aktivitet").delete().lte("id", Math.max(...aktiviteter.map((a) => a.id)));
 	return svar({
 		dato,
 		time,
 		minutt,
 		brukere: aktuelle.length,
+		aktiviteter: aktiviteter.length,
 		sendt: resultat,
 		feil: sendefeil.length ? sendefeil : void 0
 	});

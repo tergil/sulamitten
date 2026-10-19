@@ -294,7 +294,9 @@ export interface DeltListe {
 // Varsler (push): innstillinger per bruker. Sendes av Edge Function «varsler» (se supabase/varsler.sql).
 // ---------------------------------------------------------------------------
 
-export type VarselType = 'bursdag' | 'jul' | 'andre' | 'frist' | 'kalender' | 'hage' | 'avtaler' | 'avtaleFor';
+/** De siste fire er det den andre gjør i delte lister (sendes fortløpende, ikke på et fast klokkeslett) */
+export type VarselType = 'bursdag' | 'jul' | 'andre' | 'frist' | 'kalender' | 'hage' | 'avtaler' | 'avtaleFor'
+  | 'nyListe' | 'nyttPunkt' | 'gaveide' | 'kjopt';
 
 export interface VarselValg {
   pa: boolean;
@@ -326,8 +328,29 @@ export const STANDARD_VARSLER: VarselInnstillinger = {
     avtaler: { pa: true, dager: [0] },
     /** Varsel før en avtale, når avtalen har «varsel før» */
     avtaleFor: { pa: true, dager: [0] },
+    /** Den andre lager en ny delt liste */
+    nyListe: { pa: true, dager: [0] },
+    /** Den andre legger til noe i en delt liste */
+    nyttPunkt: { pa: true, dager: [0] },
+    /** Den andre legger til en gaveidé i et felles gaveår */
+    gaveide: { pa: true, dager: [0] },
+    /** Den andre markerer noe som kjøpt i en delt liste */
+    kjopt: { pa: true, dager: [0] },
   },
 };
+
+/** Et varsel i appen (bjella). Lagres av Edge Function «varsler» i tabellen varsel_innboks – med alle detaljer. */
+export interface InnboksVarsel {
+  id: Id;
+  type: VarselType | '';
+  tittel: string;
+  tekst: string;
+  /** Relativ adresse i appen, f.eks. «#/lister/<id>» */
+  url: string;
+  /** ISO-tidspunkt */
+  opprettet: string;
+  lest: boolean;
+}
 
 /** En enhet som har slått på varsler */
 export interface VarselEnhet {
