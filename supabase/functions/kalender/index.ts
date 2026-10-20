@@ -383,7 +383,8 @@ function kalenderPoster(hendelser, lister, punkter, fra, til, valg = {
 			kilde: "avtale",
 			forekomst: f,
 			gjentar: !!f.serie.gjentak,
-			endret: !!f.unntak
+			endret: !!f.unntak && !h.innstilt,
+			avlyst: h.innstilt || void 0
 		};
 	});
 	if (valg.anledninger) {
@@ -504,7 +505,8 @@ function lagIcs(poster, navn, naa = /* @__PURE__ */ new Date(), kalendernavn = "
 			const sluttDato = p.sluttDato ?? (slutt <= start ? leggTilDager(p.dato, 1) : p.dato);
 			linjer.push(`DTSTART;TZID=Europe/Oslo:${dato8(p.dato)}T${tid6(p.fra)}`, `DTEND;TZID=Europe/Oslo:${dato8(sluttDato)}T${tid6(p.til ?? tilTid(Math.min(start + 60, 1439)))}`);
 		} else linjer.push(`DTSTART;VALUE=DATE:${dato8(p.dato)}`, `DTEND;VALUE=DATE:${dato8(leggTilDager(p.sluttDato ?? p.dato, 1))}`, "TRANSP:TRANSPARENT");
-		linjer.push(`SUMMARY:${icsTekst(`${p.tittel}${ansvarlig ? ` (${ansvarlig})` : ""}`)}`);
+		if (p.avlyst) linjer.push("STATUS:CANCELLED");
+		linjer.push(`SUMMARY:${icsTekst(`${p.avlyst ? "Avlyst: " : ""}${p.tittel}${ansvarlig ? ` (${ansvarlig})` : ""}`)}`);
 		if (p.sted) linjer.push(`LOCATION:${icsTekst(p.sted)}`);
 		if (beskrivelse) linjer.push(`DESCRIPTION:${icsTekst(beskrivelse)}`);
 		linjer.push("END:VEVENT");

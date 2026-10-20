@@ -57,7 +57,9 @@ export function lagIcs(poster: KalenderPost[], navn: (id: string) => string | un
     } else {
       linjer.push(`DTSTART;VALUE=DATE:${dato8(p.dato)}`, `DTEND;VALUE=DATE:${dato8(leggTilDager(p.sluttDato ?? p.dato, 1))}`, 'TRANSP:TRANSPARENT');
     }
-    linjer.push(`SUMMARY:${icsTekst(`${p.tittel}${ansvarlig ? ` (${ansvarlig})` : ''}`)}`);
+    // Avlyst: mange kalenderapper overser STATUS i abonnementer, så det står også i tittelen
+    if (p.avlyst) linjer.push('STATUS:CANCELLED');
+    linjer.push(`SUMMARY:${icsTekst(`${p.avlyst ? 'Avlyst: ' : ''}${p.tittel}${ansvarlig ? ` (${ansvarlig})` : ''}`)}`);
     if (p.sted) linjer.push(`LOCATION:${icsTekst(p.sted)}`);
     if (beskrivelse) linjer.push(`DESCRIPTION:${icsTekst(beskrivelse)}`);
     linjer.push('END:VEVENT');

@@ -3,7 +3,7 @@
 // Ren logikk uten React og uten nettleser.
 import type { Hendelse, Liste, Punkt, VarselInnstillinger, VarselType } from '../data/modell';
 import { STANDARD_VARSLER } from '../data/modell';
-import { kalenderPoster, leggTilDager, minutter, paaDato } from './kalender';
+import { gjentakTekst, kalenderPoster, leggTilDager, minutter, paaDato } from './kalender';
 import { anledningsNavn, forekomster } from './gaveaar';
 import { LISTETYPER, dagerMellom, erBrukt, erFerdig, hageIMaaned, huskelapp } from './lister';
 
@@ -163,7 +163,8 @@ export function beregnVarsler(lister: Liste[], punkter: Punkt[], innstillinger: 
   if (kal && t.avtaler.pa) {
     for (const d of [...new Set(t.avtaler.dager)].sort()) {
       const dato = leggTilDager(iDag, d);
-      const poster = kalenderPoster(kal.hendelser, [], [], dato, dato, { anledninger: false, frister: false }).filter((x) => paaDato(x, dato));
+      // Avlyste avtaler er ikke med (det kom eget varsel da de ble avlyst)
+      const poster = kalenderPoster(kal.hendelser, [], [], dato, dato, { anledninger: false, frister: false }).filter((x) => paaDato(x, dato) && !x.avlyst);
       if (!poster.length) continue;
       const nokkel = `avtaler:${dato}:${d}`;
       ut.push({
@@ -186,7 +187,7 @@ export function forVarsler(hendelser: Hendelse[], naa: { dato: string; minutt: n
   const poster = kalenderPoster(hendelser, [], [], naa.dato, leggTilDager(naa.dato, 1), { anledninger: false, frister: false });
   for (const p of poster) {
     const varselMin = p.forekomst?.hendelse.varselMin;
-    if (!p.fra || !varselMin) continue;
+    if (!p.fra || !varselMin || p.avlyst) continue;
     const start = (p.dato === naa.dato ? 0 : 1440) + minutter(p.fra);
     const varselTid = start - varselMin;
     if (varselTid > naa.minutt || varselTid <= naa.minutt - vindu) continue;
@@ -207,20 +208,22 @@ export function forVarsler(hendelser: Hendelse[], naa: { dato: string; minutt: n
 // ---------------------------------------------------------------- Det den andre gjør i delte lister
 
 /** Varseltyper for det den andre gjør – sendes fortløpende, ikke på brukerens klokkeslett */
-export const AKTIVITETSTYPER: VarselType[] = ['nyListe', 'nyttPunkt', 'gaveide', 'kjopt'];
+export const AKTIVITETSTYPER: VarselType[] = ['nyListe', 'nyttPunkt', 'gaveide', 'kjopt', 'avlyst'];
 
 /**
- * En endring i en delt liste (tabellen «aktivitet», fylles av databasetriggere i supabase/varsler.sql).
- * liste = ny delt liste, punkt = nytt punkt, status = punktet fikk ny status.
+ * En endring i en delt liste eller kalenderen (tabellen «aktivitet», fylles av databasetriggere i
+ * supabase/varsler.sql og supabase/kalender.sql). liste = ny delt liste, punkt = nytt punkt,
+ * status = punktet fikk ny status, avlyst = en avtale ble avlyst (hendelseId, listeId er da tom).
  */
 export interface Aktivitet {
   id: number;
   /** Brukeren (auth-id) som gjorde endringen */
   bruker: string;
-  hva: 'liste' | 'punkt' | 'status';
+  hva: 'liste' | 'punkt' | 'status' | 'avlyst';
   listeId: string;
   punktId?: string | null;
   status?: string | null;
+  hendelseId?: string | null;
 }
 
 /** «Melk, brød og egg» – maks fire, resten som «og 3 til» */
@@ -307,6 +310,33 @@ export function aktivitetsVarsler(aktiviteter: Aktivitet[], lister: Liste[], pun
   return ut;
 }
 
+/**
+ * Varsel når den andre avlyser en avtale. Bare det som fortsatt er avlyst (angret man med en gang, blir det ikke noe varsel)
+ * og som ikke allerede er over. Avlyses en hel serie, blir det ett varsel – ikke ett per endret dag i serien.
+ */
+export function avlysningsVarsler(aktiviteter: Aktivitet[], hendelser: Hendelse[], mottaker: string, innstillinger: VarselInnstillinger,
+  navn: (bruker: string) => string | undefined, iDag: string): Varsel[] {
+  if (!medStandard(innstillinger).typer.avlyst.pa) return [];
+  const avlyst = new Map(aktiviteter.filter((a) => a.hva === 'avlyst' && a.hendelseId && a.bruker !== mottaker).map((a) => [a.hendelseId!, a]));
+  const ut: Varsel[] = [];
+  for (const h of hendelser) {
+    const a = avlyst.get(h.id);
+    if (!a || !h.innstilt || h.avlyst || (h.serieId && avlyst.has(h.serieId))) continue;
+    const erSerie = !!h.gjentak && !h.serieId;
+    if (erSerie ? !!h.gjentak!.til && h.gjentak!.til < iDag : (h.sluttDato ?? h.dato) < iDag) continue;
+    const nokkel = `aktivitet:avlyst:${h.id}:${a.id}`;
+    ut.push({
+      type: 'avlyst', nokkel, nokler: [nokkel],
+      tittel: `${navn(a.bruker) ?? 'Noen'} avlyste «${h.tittel}»`,
+      tekst: erSerie
+        ? `${h.dato > iDag ? `Fra ${datoKort(h.dato)}` : 'Alle gangene'} · ${gjentakTekst(h.gjentak, h.dato).toLowerCase()}`
+        : `${datoKort(h.dato)}${h.fra ? ` kl. ${h.fra}` : ''}${h.sted ? ` · ${h.sted}` : ''}`,
+      url: '#/kalender',
+    });
+  }
+  return ut;
+}
+
 // ---------------------------------------------------------------- Sending
 
 export interface Melding { tittel: string; tekst: string; url: string; nokler: string[]; type?: VarselType }
@@ -331,6 +361,7 @@ export function utenDetaljer(meldinger: Melding[]): Melding[] {
     ...m,
     tittel: 'Sulamitten',
     tekst: m.type === 'avtaleFor' ? 'En avtale nærmer seg. Åpne appen for å se hvilken.'
+      : m.type === 'avlyst' ? 'En avtale er avlyst. Åpne appen for å se hvilken.'
       : m.type && AKTIVITETSTYPER.includes(m.type) ? 'Det er nytt i en delt liste. Åpne appen for å se hva.'
       : 'Det er noe å huske på i dag. Åpne appen for å se hva.',
     url: '#/innboks',

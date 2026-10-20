@@ -294,9 +294,9 @@ export interface DeltListe {
 // Varsler (push): innstillinger per bruker. Sendes av Edge Function «varsler» (se supabase/varsler.sql).
 // ---------------------------------------------------------------------------
 
-/** De siste fire er det den andre gjør i delte lister (sendes fortløpende, ikke på et fast klokkeslett) */
+/** De siste fem er det den andre gjør i delte lister og kalenderen (sendes fortløpende, ikke på et fast klokkeslett) */
 export type VarselType = 'bursdag' | 'jul' | 'andre' | 'frist' | 'kalender' | 'hage' | 'avtaler' | 'avtaleFor'
-  | 'nyListe' | 'nyttPunkt' | 'gaveide' | 'kjopt';
+  | 'nyListe' | 'nyttPunkt' | 'gaveide' | 'kjopt' | 'avlyst';
 
 export interface VarselValg {
   pa: boolean;
@@ -336,6 +336,8 @@ export const STANDARD_VARSLER: VarselInnstillinger = {
     gaveide: { pa: true, dager: [0] },
     /** Den andre markerer noe som kjøpt i en delt liste */
     kjopt: { pa: true, dager: [0] },
+    /** Den andre avlyser en avtale i kalenderen */
+    avlyst: { pa: true, dager: [0] },
   },
 };
 
@@ -403,8 +405,11 @@ export interface Hendelse {
   notat?: string;
   /** Varsel så mange minutter før (krever klokkeslett) */
   varselMin?: number;
-  /** Unntak i en serie: denne raden erstatter (eller avlyser) forekomsten originalDato i serien serieId */
+  /** Avlyst, men vises fortsatt (gjennomstreket). Ikke det samme som «avlyst» under, som betyr at dagen er slettet fra serien. */
+  innstilt?: boolean;
+  /** Unntak i en serie: denne raden erstatter (eller sletter) forekomsten originalDato i serien serieId */
   serieId?: Id;
   originalDato?: string;
+  /** Dagen er slettet fra serien (vises ikke) */
   avlyst?: boolean;
 }

@@ -20,12 +20,13 @@ const TYPER: { type: VarselType; ikon: string; navn: string; tekst: string; valg
   { type: 'hage', ikon: 'spire', navn: 'Hagen', tekst: 'Den 1. i hver måned: hva som skal gjøres i hagen.', valg: [] },
 ];
 
-/** Når den andre gjør noe i delte lister. Kommer fortløpende (innen et kvarter), men ikke mellom 22 og 07. */
+/** Når den andre gjør noe i delte lister eller kalenderen. Kommer fortløpende (innen et kvarter), men ikke mellom 22 og 07. */
 const AKTIVITET: typeof TYPER = [
   { type: 'nyListe', ikon: 'liste', navn: 'Nye delte lister', tekst: 'Når den andre lager en ny felles liste.', valg: [] },
   { type: 'nyttPunkt', ikon: 'rediger', navn: 'Nytt i delte lister', tekst: 'Når den andre legger til noe – ti ting på handlelisten blir ett varsel.', valg: [] },
   { type: 'gaveide', ikon: 'gave', navn: 'Nye gaveideer', tekst: 'Når den andre legger inn en gaveidé i et felles gaveår.', valg: [] },
   { type: 'kjopt', ikon: 'pose', navn: 'Noe er kjøpt', tekst: 'Når den andre markerer en gave eller et ønske som kjøpt.', valg: [] },
+  { type: 'avlyst', ikon: 'avlys', navn: 'Avlyste avtaler', tekst: 'Når den andre avlyser en avtale i kalenderen.', valg: [] },
 ];
 
 /** Ikonet for en varseltype (brukes også i bjella) */
@@ -259,7 +260,7 @@ export function Varsler() {
 
       <section className="kort">
         <div className="kort-hode">
-          <div className="tittel"><h2>Når den andre gjør noe</h2><span className="dempet liten">I delte lister. Kommer innen et kvarter, men ikke mellom 22 og 07 – da venter det til morgenen.</span></div>
+          <div className="tittel"><h2>Når den andre gjør noe</h2><span className="dempet liten">I delte lister og kalenderen. Kommer innen et kvarter, men ikke mellom 22 og 07 – da venter det til morgenen.</span></div>
         </div>
         <div className="varseltyper">{AKTIVITET.map(typeRad)}</div>
       </section>

@@ -27,6 +27,9 @@ Personlige arbeidsinstrukser ligger i `~/.claude/CLAUDE.md`. Denne fila handler 
 - **Kalender** (`#/kalender`, `sider/Kalender.tsx`, `logikk/kalender.ts`): felles avtaler i tabellen `hendelse`.
   En serie er én rad med `gjentak`; «bare denne dagen» er en egen rad med `serieId` + `originalDato` (`avlyst` = slettet).
   Endring/sletting: bare denne / denne og fremover (serien deles) / hele serien – `endreForekomst`/`slettForekomst`.
+  **Avlyse** (`avlysForekomst`) ≠ slette: `innstilt` (i `ekstra`) = avlyst, vises gjennomstreket og står i ICS som «Avlyst:».
+  Ikke forveksle med kolonnen `avlyst`, som betyr at dagen er slettet fra serien. Avlysning varsler den andre
+  (trigger `logg_hendelse` → `aktivitet.hendelse_id` → `avlysningsVarsler()`); morgenoversikt og «før avtale» hopper over avlyste.
   Viser også bursdager fra gaveårene og frister fra listene. `hvem` = personer + `FellesDok.familie` (barna),
   `ansvarlig` = den som henter/leverer. Abonnement for telefonens kalender: Edge Function «kalender»
   (`?n=<FellesDok.kalenderNokkel>`, utvidede forekomster som ICS, `logikk/ics.ts`).

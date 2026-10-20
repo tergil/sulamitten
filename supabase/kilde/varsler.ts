@@ -14,7 +14,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 import webpush from 'npm:web-push@3.6.7';
 import type { VarselInnstillinger } from '../../src/data/modell';
 import {
-  AKTIVITETSTYPER, aktivitetsVarsler, beregnVarsler, forVarsler, medStandard, norskTid, slaaSammen, utenDetaljer,
+  AKTIVITETSTYPER, aktivitetsVarsler, avlysningsVarsler, beregnVarsler, forVarsler, medStandard, norskTid, slaaSammen, utenDetaljer,
   type Aktivitet, type Melding, type Varsel,
 } from '../../src/logikk/varsler';
 import { hentAlt, navnFra } from './felles';
@@ -103,9 +103,14 @@ async function behandle(req: Request): Promise<Response> {
   const natt = time < 7 || time >= 22;
   let aktiviteter: Aktivitet[] = [];
   if (!natt || kropp.tving) {
-    const { data: rader } = await db.from('aktivitet').select('id, bruker, hva, liste_id, punkt_id, status')
-      .lt('tid', new Date(Date.now() - 60_000).toISOString()).order('id').limit(2000);
-    aktiviteter = (rader ?? []).map((r) => ({ id: Number(r.id), bruker: r.bruker, hva: r.hva, listeId: r.liste_id, punktId: r.punkt_id, status: r.status }));
+    // hendelse_id kom med avlysninger (kalender.sql). Mangler kolonnen: hent uten, så listene virker likevel.
+    const hent = (felt: string) => db.from('aktivitet').select(felt).lt('tid', new Date(Date.now() - 60_000).toISOString()).order('id').limit(2000);
+    let svarRader = await hent('id, bruker, hva, liste_id, punkt_id, status, hendelse_id');
+    if (svarRader.error) svarRader = await hent('id, bruker, hva, liste_id, punkt_id, status');
+    const rader = (svarRader.data ?? []) as unknown as Record<string, string | null>[];
+    aktiviteter = rader.map((r) => ({
+      id: Number(r.id), bruker: r.bruker!, hva: r.hva as Aktivitet['hva'], listeId: r.liste_id ?? '', punktId: r.punkt_id, status: r.status, hendelseId: r.hendelse_id,
+    }));
   }
 
   // Gamle varsler i bjella (over 60 dager) ryddes én gang i døgnet
@@ -146,7 +151,10 @@ async function behandle(req: Request): Promise<Response> {
     }
     // Delte lister: bare felles lister (aldri den andres private – de er heller ikke med i «synlige»)
     const delteLister = synlige.filter((l) => !l.privat);
-    if (aktiviteter.length) kandidater.push(...aktivitetsVarsler(aktiviteter, delteLister, synligePunkter, bruker, inn, (b) => personer.get(b)?.navn));
+    if (aktiviteter.length) {
+      kandidater.push(...aktivitetsVarsler(aktiviteter, delteLister, synligePunkter, bruker, inn, (b) => personer.get(b)?.navn));
+      kandidater.push(...avlysningsVarsler(aktiviteter, hendelser, bruker, inn, (b) => personer.get(b)?.navn, dato));
+    }
     if (!kandidater.length) continue;
 
     const { data: sendtFor } = await db.from('varsel_sendt').select('nokkel').eq('bruker', bruker).in('nokkel', kandidater.map((k) => k.nokkel));
@@ -164,12 +172,13 @@ async function behandle(req: Request): Promise<Response> {
 
     const { data: enheter } = await db.from('varsel_abonnement').select('id, bruker, endpoint, p256dh, auth').eq('bruker', bruker);
     if (!enheter?.length) continue;
-    // Varsel før en avtale kommer alltid alene (tidskritisk); resten slås sammen når det er mange
+    // Varsel før en avtale og avlysninger kommer alltid alene (tidskritisk); resten slås sammen når det er mange
     const enkelt = (v: Varsel): Melding => ({ tittel: v.tittel, tekst: v.tekst, url: v.url, nokler: v.nokler, type: v.type });
+    const alene = (v: Varsel) => v.type === 'avtaleFor' || v.type === 'avlyst';
     const alleMeldinger = [
-      ...nye.filter((v) => v.type === 'avtaleFor').map(enkelt),
-      ...slaaSammen(nye.filter((v) => v.type !== 'avtaleFor' && !AKTIVITETSTYPER.includes(v.type))),
-      ...slaaSammen(nye.filter((v) => AKTIVITETSTYPER.includes(v.type)), 2, (n) => `${n} nye ting i delte lister`),
+      ...nye.filter(alene).map(enkelt),
+      ...slaaSammen(nye.filter((v) => !alene(v) && !AKTIVITETSTYPER.includes(v.type))),
+      ...slaaSammen(nye.filter((v) => !alene(v) && AKTIVITETSTYPER.includes(v.type)), 2, (n) => `${n} nye ting i delte lister`),
     ];
     // «Skjul detaljer»: ingen navn, gaver eller avtaler på låseskjermen – varselet åpner bjella i appen
     const meldinger = inn.skjulDetaljer ? utenDetaljer(alleMeldinger) : alleMeldinger;

@@ -76,6 +76,7 @@ const STIER: Record<string, ReactNode> = {
   mer: <><circle cx="5" cy="12" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="19" cy="12" r="1.5" /></>,
   pluss: <path d="M12 5v14M5 12h14" />,
   lukk: <path d="M6 6l12 12M18 6 6 18" />,
+  avlys: <><circle cx="12" cy="12" r="9" /><path d="M5.6 5.6l12.8 12.8" /></>,
   opp: <path d="M12 19V5M6 11l6-6 6 6" />,
   ned: <path d="M12 5v14M6 13l6 6 6-6" />,
   sjekk: <path d="M5 12.5 10 17 19 7" />,

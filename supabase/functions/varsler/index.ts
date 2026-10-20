@@ -61,6 +61,11 @@ const STANDARD_VARSLER = {
 		kjopt: {
 			pa: true,
 			dager: [0]
+		},
+		/** Den andre avlyser en avtale i kalenderen */
+		avlyst: {
+			pa: true,
+			dager: [0]
 		}
 	}
 };
@@ -393,6 +398,15 @@ const STANDARD_KALENDERKATEGORIER = [
 		farge: 7
 	}
 ];
+const UKEDAGER_KORT = [
+	"man",
+	"tir",
+	"ons",
+	"tor",
+	"fre",
+	"lør",
+	"søn"
+];
 const DAG = 864e5;
 const utc = (iso) => {
 	const [a, m, d] = iso.split("-").map(Number);
@@ -424,6 +438,22 @@ function treffer(h, d) {
 		case "maaned": return d.slice(8) === h.dato.slice(8) && ((aar(d) - aar(h.dato)) * 12 + mnd(d) - mnd(h.dato)) % n === 0;
 		case "aar": return d.slice(5) === h.dato.slice(5) && (aar(d) - aar(h.dato)) % n === 0;
 	}
+}
+/** «Hverdager», «Hver uke: man, ons», «Hver 2. uke: tor», «Hver måned den 14.» */
+function gjentakTekst(g, dato) {
+	if (!g) return "Gjentas ikke";
+	const n = Math.max(1, g.intervall || 1);
+	const hver = n === 1 ? "Hver" : `Hver ${n}.`;
+	let tekst;
+	if (g.frekvens === "dag") tekst = n === 1 ? "Hver dag" : `Hver ${n}. dag`;
+	else if (g.frekvens === "uke") {
+		const dager = [...g.ukedager?.length ? g.ukedager : [ukedag(dato)]].sort();
+		if (n === 1 && dager.join() === "1,2,3,4,5") tekst = "Hverdager";
+		else if (n === 1 && dager.length === 7) tekst = "Hver dag";
+		else tekst = `${hver} uke: ${dager.map((x) => UKEDAGER_KORT[x - 1]).join(", ")}`;
+	} else if (g.frekvens === "maaned") tekst = `${hver} måned den ${Number(dato.slice(8))}.`;
+	else tekst = n === 1 ? "Hvert år" : `Hvert ${n}. år`;
+	return g.til ? `${tekst} til ${Number(g.til.slice(8))}.${Number(g.til.slice(5, 7))}.${g.til.slice(0, 4)}` : tekst;
 }
 /** Hvor mange dager en avtale varer utover startdagen */
 const varighet = (h) => h.sluttDato && h.sluttDato > h.dato ? dagerMellom(h.dato, h.sluttDato) : 0;
@@ -505,7 +535,8 @@ function kalenderPoster(hendelser, lister, punkter, fra, til, valg = {
 			kilde: "avtale",
 			forekomst: f,
 			gjentar: !!f.serie.gjentak,
-			endret: !!f.unntak
+			endret: !!f.unntak && !h.innstilt,
+			avlyst: h.innstilt || void 0
 		};
 	});
 	if (valg.anledninger) {
@@ -707,7 +738,7 @@ function beregnVarsler(lister, punkter, innstillinger, iDag, kal) {
 		const poster = kalenderPoster(kal.hendelser, [], [], dato, dato, {
 			anledninger: false,
 			frister: false
-		}).filter((x) => paaDato(x, dato));
+		}).filter((x) => paaDato(x, dato) && !x.avlyst);
 		if (!poster.length) continue;
 		const nokkel = `avtaler:${dato}:${d}`;
 		ut.push({
@@ -733,7 +764,7 @@ function forVarsler(hendelser, naa, kal, vindu = 15) {
 	});
 	for (const p of poster) {
 		const varselMin = p.forekomst?.hendelse.varselMin;
-		if (!p.fra || !varselMin) continue;
+		if (!p.fra || !varselMin || p.avlyst) continue;
 		const varselTid = (p.dato === naa.dato ? 0 : 1440) + minutter(p.fra) - varselMin;
 		if (varselTid > naa.minutt || varselTid <= naa.minutt - vindu) continue;
 		const involverte = [...p.hvem, ...p.ansvarlig ? [p.ansvarlig] : []].filter((id) => kal.voksne.has(id));
@@ -756,7 +787,8 @@ const AKTIVITETSTYPER = [
 	"nyListe",
 	"nyttPunkt",
 	"gaveide",
-	"kjopt"
+	"kjopt",
+	"avlyst"
 ];
 /** «Melk, brød og egg» – maks fire, resten som «og 3 til» */
 function opplisting(tekster, maks = 4) {
@@ -838,6 +870,31 @@ function aktivitetsVarsler(aktiviteter, lister, punkter, mottaker, innstillinger
 	}
 	return ut;
 }
+/**
+* Varsel når den andre avlyser en avtale. Bare det som fortsatt er avlyst (angret man med en gang, blir det ikke noe varsel)
+* og som ikke allerede er over. Avlyses en hel serie, blir det ett varsel – ikke ett per endret dag i serien.
+*/
+function avlysningsVarsler(aktiviteter, hendelser, mottaker, innstillinger, navn, iDag) {
+	if (!medStandard(innstillinger).typer.avlyst.pa) return [];
+	const avlyst = new Map(aktiviteter.filter((a) => a.hva === "avlyst" && a.hendelseId && a.bruker !== mottaker).map((a) => [a.hendelseId, a]));
+	const ut = [];
+	for (const h of hendelser) {
+		const a = avlyst.get(h.id);
+		if (!a || !h.innstilt || h.avlyst || h.serieId && avlyst.has(h.serieId)) continue;
+		const erSerie = !!h.gjentak && !h.serieId;
+		if (erSerie ? !!h.gjentak.til && h.gjentak.til < iDag : (h.sluttDato ?? h.dato) < iDag) continue;
+		const nokkel = `aktivitet:avlyst:${h.id}:${a.id}`;
+		ut.push({
+			type: "avlyst",
+			nokkel,
+			nokler: [nokkel],
+			tittel: `${navn(a.bruker) ?? "Noen"} avlyste «${h.tittel}»`,
+			tekst: erSerie ? `${h.dato > iDag ? `Fra ${datoKort(h.dato)}` : "Alle gangene"} · ${gjentakTekst(h.gjentak, h.dato).toLowerCase()}` : `${datoKort(h.dato)}${h.fra ? ` kl. ${h.fra}` : ""}${h.sted ? ` · ${h.sted}` : ""}`,
+			url: "#/kalender"
+		});
+	}
+	return ut;
+}
 /** Mange varsler blir ett samlet varsel, så telefonen ikke fylles opp. Det samlede åpner varslene i appen. */
 function slaaSammen(varsler, maks = 3, samletTittel = (n) => `${n} påminnelser i dag`) {
 	if (varsler.length <= maks) return varsler.map((v) => ({
@@ -862,7 +919,7 @@ function utenDetaljer(meldinger) {
 	return meldinger.map((m) => ({
 		...m,
 		tittel: "Sulamitten",
-		tekst: m.type === "avtaleFor" ? "En avtale nærmer seg. Åpne appen for å se hvilken." : m.type && AKTIVITETSTYPER.includes(m.type) ? "Det er nytt i en delt liste. Åpne appen for å se hva." : "Det er noe å huske på i dag. Åpne appen for å se hva.",
+		tekst: m.type === "avtaleFor" ? "En avtale nærmer seg. Åpne appen for å se hvilken." : m.type === "avlyst" ? "En avtale er avlyst. Åpne appen for å se hvilken." : m.type && AKTIVITETSTYPER.includes(m.type) ? "Det er nytt i en delt liste. Åpne appen for å se hva." : "Det er noe å huske på i dag. Åpne appen for å se hva.",
 		url: "#/innboks"
 	}));
 }
@@ -1043,14 +1100,17 @@ async function behandle(req) {
 	const natt = time < 7 || time >= 22;
 	let aktiviteter = [];
 	if (!natt || kropp.tving) {
-		const { data: rader } = await db.from("aktivitet").select("id, bruker, hva, liste_id, punkt_id, status").lt("tid", (/* @__PURE__ */ new Date(Date.now() - 6e4)).toISOString()).order("id").limit(2e3);
-		aktiviteter = (rader ?? []).map((r) => ({
+		const hent = (felt) => db.from("aktivitet").select(felt).lt("tid", (/* @__PURE__ */ new Date(Date.now() - 6e4)).toISOString()).order("id").limit(2e3);
+		let svarRader = await hent("id, bruker, hva, liste_id, punkt_id, status, hendelse_id");
+		if (svarRader.error) svarRader = await hent("id, bruker, hva, liste_id, punkt_id, status");
+		aktiviteter = (svarRader.data ?? []).map((r) => ({
 			id: Number(r.id),
 			bruker: r.bruker,
 			hva: r.hva,
-			listeId: r.liste_id,
+			listeId: r.liste_id ?? "",
 			punktId: r.punkt_id,
-			status: r.status
+			status: r.status,
+			hendelseId: r.hendelse_id
 		}));
 	}
 	if (time === 3 && minutt % 60 < 15) await db.from("varsel_innboks").delete().lt("opprettet", (/* @__PURE__ */ new Date(Date.now() - 5184e6)).toISOString());
@@ -1093,7 +1153,10 @@ async function behandle(req) {
 			voksne
 		}));
 		const delteLister = synlige.filter((l) => !l.privat);
-		if (aktiviteter.length) kandidater.push(...aktivitetsVarsler(aktiviteter, delteLister, synligePunkter, bruker, inn, (b) => personer.get(b)?.navn));
+		if (aktiviteter.length) {
+			kandidater.push(...aktivitetsVarsler(aktiviteter, delteLister, synligePunkter, bruker, inn, (b) => personer.get(b)?.navn));
+			kandidater.push(...avlysningsVarsler(aktiviteter, hendelser, bruker, inn, (b) => personer.get(b)?.navn, dato));
+		}
 		if (!kandidater.length) continue;
 		const { data: sendtFor } = await db.from("varsel_sendt").select("nokkel").eq("bruker", bruker).in("nokkel", kandidater.map((k) => k.nokkel));
 		const sendt = new Set((sendtFor ?? []).map((r) => r.nokkel));
@@ -1124,10 +1187,11 @@ async function behandle(req) {
 			nokler: v.nokler,
 			type: v.type
 		});
+		const alene = (v) => v.type === "avtaleFor" || v.type === "avlyst";
 		const alleMeldinger = [
-			...nye.filter((v) => v.type === "avtaleFor").map(enkelt),
-			...slaaSammen(nye.filter((v) => v.type !== "avtaleFor" && !AKTIVITETSTYPER.includes(v.type))),
-			...slaaSammen(nye.filter((v) => AKTIVITETSTYPER.includes(v.type)), 2, (n) => `${n} nye ting i delte lister`)
+			...nye.filter(alene).map(enkelt),
+			...slaaSammen(nye.filter((v) => !alene(v) && !AKTIVITETSTYPER.includes(v.type))),
+			...slaaSammen(nye.filter((v) => !alene(v) && AKTIVITETSTYPER.includes(v.type)), 2, (n) => `${n} nye ting i delte lister`)
 		];
 		const meldinger = inn.skjulDetaljer ? utenDetaljer(alleMeldinger) : alleMeldinger;
 		let antall = 0;

@@ -164,7 +164,8 @@ export function endreForekomst(hendelser: Hendelse[], f: Forekomst, ny: Avtale, 
   if (!serie.gjentak) return { lagre: [{ ...serie, ...ny, id: serie.id }], slett: [] };
 
   if (modus === 'denne') {
-    return { lagre: [{ ...ny, gjentak: undefined, id: f.unntak?.id ?? nyId(), serieId: serie.id, originalDato: f.originalDato, avlyst: false }], slett: [] };
+    // En avlyst dag forblir avlyst når noe annet endres (med mindre endringen sier noe annet)
+    return { lagre: [{ innstilt: f.hendelse.innstilt, ...ny, gjentak: undefined, id: f.unntak?.id ?? nyId(), serieId: serie.id, originalDato: f.originalDato, avlyst: false }], slett: [] };
   }
   const forskyvning = dagerMellom(f.originalDato, ny.dato);
   const nyttMonster = forskyvning !== 0 || !sammeMonster(ny.gjentak, serie.gjentak, serie.dato);
@@ -178,7 +179,7 @@ export function endreForekomst(hendelser: Hendelse[], f: Forekomst, ny: Avtale, 
   // Denne og fremover: den gamle serien slutter dagen før, en ny begynner her
   const gammel: Hendelse = { ...serie, gjentak: { ...serie.gjentak, til: leggTilDager(f.originalDato, -1) } };
   const nyId_ = nyId();
-  const nySerie: Hendelse = { ...ny, id: nyId_ };
+  const nySerie: Hendelse = { innstilt: serie.innstilt, ...ny, id: nyId_ };
   const etter = unntakI.filter((u) => u.originalDato! >= f.originalDato);
   return {
     lagre: [gammel, nySerie, ...(nyttMonster ? [] : etter.filter((u) => u.originalDato !== f.originalDato).map((u) => ({ ...u, serieId: nyId_ })))],
@@ -199,6 +200,39 @@ export function slettForekomst(hendelser: Hendelse[], f: Forekomst, modus: Modus
   return {
     lagre: [{ ...serie, gjentak: { ...serie.gjentak, til: leggTilDager(f.originalDato, -1) } }],
     slett: unntakI.filter((u) => u.originalDato! >= f.originalDato).map((u) => u.id),
+  };
+}
+
+/** Er unntaket likt serien (dato, gjentakelse og avlysning ikke medregnet)? */
+function likSerien(u: Hendelse, serie: Hendelse): boolean {
+  const innhold = (h: Hendelse) => {
+    const { dato: _d, gjentak: _g, innstilt: _i, ...rest } = utenSerie(h);
+    return JSON.stringify(Object.entries(rest).filter(([, v]) => v !== undefined && v !== '').sort(([a], [b]) => a.localeCompare(b)));
+  };
+  return innhold(u) === innhold(serie);
+}
+
+/**
+ * Avlyser (avlys = true) eller gjenopptar en forekomst: bare denne, denne og fremover, eller hele serien.
+ * Avlyste avtaler vises fortsatt, gjennomstreket. Endrede dager i den delen av serien følger med.
+ */
+export function avlysForekomst(hendelser: Hendelse[], f: Forekomst, modus: Modus, avlys: boolean): Endring {
+  const { serie } = f;
+  // Gjenopptatt dag som ellers er lik serien: unntaket trengs ikke lenger (ellers vises den som «Endret»)
+  if (!avlys && serie.gjentak && modus === 'denne' && f.unntak && !serie.innstilt && f.unntak.dato === f.originalDato && likSerien(f.unntak, serie)) {
+    return { lagre: [], slett: [f.unntak.id] };
+  }
+  if (!serie.gjentak || modus === 'denne') {
+    return endreForekomst(hendelser, f, { ...utenSerie(f.hendelse), dato: f.dato, gjentak: serie.gjentak, innstilt: avlys }, modus);
+  }
+  // Serien selv (ikke en flyttet dag), så ingenting forskyves
+  const e = endreForekomst(hendelser, f, { ...utenSerie(serie), dato: f.originalDato, innstilt: avlys }, modus);
+  const fraStart = modus === 'alle' || f.originalDato === serie.dato;
+  const berorte = hendelser.filter((u) => u.serieId === serie.id && !u.avlyst && (fraStart || u.originalDato! >= f.originalDato)
+    && !e.slett.includes(u.id) && !e.lagre.some((l) => l.id === u.id));
+  return {
+    lagre: [...e.lagre.map((h) => (h.serieId ? { ...h, innstilt: avlys } : h)), ...berorte.map((u) => ({ ...u, innstilt: avlys }))],
+    slett: e.slett,
   };
 }
 
@@ -224,6 +258,8 @@ export interface KalenderPost {
   gjentar?: boolean;
   /** Forekomst som er endret fra serien (f.eks. en annen henter) */
   endret?: boolean;
+  /** Avlyst – vises gjennomstreket */
+  avlyst?: boolean;
 }
 
 /** Avtaler, anledninger fra gaveårene (unntatt jul) og frister fra listene i perioden */
@@ -238,7 +274,7 @@ export function kalenderPoster(hendelser: Hendelse[], lister: Liste[], punkter: 
     return {
       nokkel: f.nokkel, dato: f.dato, sluttDato: forskyvning ? leggTilDager(f.dato, forskyvning) : undefined, fra: h.fra, til: h.til,
       tittel: h.tittel, farge, hvem: h.hvem ?? [], ansvarlig: h.ansvarlig, sted: h.sted, notat: h.notat,
-      kilde: 'avtale', forekomst: f, gjentar: !!f.serie.gjentak, endret: !!f.unntak,
+      kilde: 'avtale', forekomst: f, gjentar: !!f.serie.gjentak, endret: !!f.unntak && !h.innstilt, avlyst: h.innstilt || undefined,
     };
   });
 

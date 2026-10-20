@@ -771,6 +771,11 @@ body.drar-punkt [data-dra-id] { transition: transform .15s ease; }
 .kal-tid strong { color: var(--blekk); font-weight: 600; font-size: 0.875rem; }
 .kal-strek { flex: none; width: 4px; border-radius: 4px; background: var(--farge, var(--noytral-flyt)); margin: 6px 0; }
 .kal-post .hoved { justify-content: center; }
+/* Avlyst: står igjen, gjennomstreket og dempet (merkelappen «Avlyst» sier det samme i tekst) */
+.kal-post.avlyst .hoved .navn, .kal-post.avlyst .kal-tid { text-decoration: line-through; color: var(--dempet); }
+.kal-post.avlyst .kal-tid strong { color: inherit; }
+.kal-post.avlyst .kal-strek { opacity: .4; }
+.kal-bit.avlyst { text-decoration: line-through; color: var(--dempet); background: transparent; }
 
 /* Måned */
 .kal-maaned { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
@@ -805,6 +810,8 @@ body.drar-punkt [data-dra-id] { transition: transform .15s ease; }
   .kal-celle { min-height: 54px; padding: 3px; }
   .kal-biter { flex-direction: row; flex-wrap: wrap; gap: 3px; }
   .kal-bit { width: 8px; height: 8px; padding: 0; border: 0; border-radius: 50%; background: var(--farge); font-size: 0; }
+  /* Avlyst: tom ring i stedet for fylt prikk */
+  .kal-bit.avlyst { background: transparent; box-shadow: inset 0 0 0 1.5px var(--farge); }
   .kal-flere { font-size: 11px; padding: 0; }
 }
 

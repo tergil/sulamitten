@@ -11,9 +11,9 @@ import {
 import type { Hendelse, Post, Punkt, Saldo, Utgift, VarselInnstillinger } from '../src/data/modell';
 import type { KalenderPost } from '../src/logikk/kalender';
 import { brett, icsTekst, lagIcs } from '../src/logikk/ics';
-import { angreEndring, endreForekomst, erForbi, kommende, forekomster as kalForekomster, gjentakTekst, kalenderPoster, sammeMonster, slettForekomst } from '../src/logikk/kalender';
+import { angreEndring, avlysForekomst, endreForekomst, erForbi, kommende, forekomster as kalForekomster, gjentakTekst, kalenderPoster, sammeMonster, slettForekomst } from '../src/logikk/kalender';
 import { STANDARD_VARSLER } from '../src/data/modell';
-import { aktivitetsVarsler, beregnVarsler, forVarsler, medStandard, norskTid, slaaSammen, utenDetaljer, varseltrinn, type Aktivitet } from '../src/logikk/varsler';
+import { aktivitetsVarsler, avlysningsVarsler, beregnVarsler, forVarsler, medStandard, norskTid, slaaSammen, utenDetaljer, varseltrinn, type Aktivitet } from '../src/logikk/varsler';
 import { merkedager, merkedagerMellom, paaskedag } from '../src/logikk/helligdager';
 
 let feil = 0;
@@ -435,6 +435,36 @@ const endringOnsdag = endreForekomst(medIngrid, onsdag, { ...henting, dato: '202
 sjekk('angre «denne og fremover» gir samme uke som før', uke(brukEndring(brukEndring(medIngrid, endringOnsdag), angreEndring(medIngrid, endringOnsdag))), uke(medIngrid));
 const slettAlle = slettForekomst(medIngrid, onsdag, 'alle');
 sjekk('angre sletting av hele serien', uke(brukEndring(brukEndring(medIngrid, slettAlle), angreEndring(medIngrid, slettAlle))), uke(medIngrid));
+
+// --- Avlysning: avtalen står igjen, merket som avlyst
+const avlyste = (alle: Hendelse[]) => kalenderPoster(alle, [], [], '2026-10-12', '2026-10-18').map((p) => `${p.dato.slice(8)}${p.avlyst ? ' avlyst' : ''}`);
+const avlystFre = brukEndring(medIngrid, avlysForekomst(medIngrid, fredag, 'denne', true));
+sjekk('avlys bare fredag: vises fortsatt', avlyste(avlystFre), ['12', '13', '14', '15', '16 avlyst']);
+const fredagAvlyst = kalForekomster(avlystFre, '2026-10-16', '2026-10-16')[0];
+sjekk('gjenoppta fredag: unntaket fjernes', brukEndring(avlystFre, avlysForekomst(avlystFre, fredagAvlyst, 'denne', false)).length, medIngrid.length);
+sjekk('avlys torsdag beholder at Ingrid henter', uke(brukEndring(medIngrid, avlysForekomst(medIngrid, torsdag(), 'denne', true)))[3], '15 16:00 ingrid');
+const avlystFraOns = brukEndring(medIngrid, avlysForekomst(medIngrid, onsdag, 'fremover', true));
+sjekk('avlys fra onsdag: også torsdagens unntak', avlyste(avlystFraOns), ['12', '13', '14 avlyst', '15 avlyst', '16 avlyst']);
+sjekk('avlys hele serien fra flyttet dag forskyver ikke', avlyste(brukEndring(flyttet, avlysForekomst(flyttet, kalForekomster(flyttet, '2026-10-17', '2026-10-17')[0], 'alle', true))),
+  ['12 avlyst', '13 avlyst', '14 avlyst', '16 avlyst', '17 avlyst']);
+const enkel: Hendelse = { id: 'e', tittel: 'Tannlege', kategori: 'annet', dato: '2026-10-14', fra: '10:00', hvem: [], varselMin: 30 };
+const enkelAvlyst = brukEndring([enkel], avlysForekomst([enkel], kalForekomster([enkel], '2026-10-14', '2026-10-14')[0], 'alle', true));
+sjekk('avlys enkel avtale', avlyste(enkelAvlyst), ['14 avlyst']);
+const endretAvlyst = brukEndring(enkelAvlyst, endreForekomst(enkelAvlyst, kalForekomster(enkelAvlyst, '2026-10-14', '2026-10-14')[0], { ...enkel, sted: 'Sentrum' }, 'alle'));
+sjekk('endring av avlyst avtale beholder avlysningen', avlyste(endretAvlyst), ['14 avlyst']);
+sjekk('ingen påminnelse før avlyst avtale', forVarsler(enkelAvlyst, { dato: '2026-10-14', minutt: 9 * 60 + 35 }, { hendelser: enkelAvlyst, navn: () => undefined, voksne: new Set() }).length, 0);
+sjekk('avlyst avtale i abonnementet', lagIcs(kalenderPoster(enkelAvlyst, [], [], '2026-10-14', '2026-10-14'), () => undefined).includes('STATUS:CANCELLED\r\nSUMMARY:Avlyst: Tannlege'), true);
+const vAvlys = structuredClone(STANDARD_VARSLER);
+const aktAvlyst: Aktivitet[] = [{ id: 7, bruker: 'u-kari', hva: 'avlyst', listeId: '', hendelseId: 'e' }];
+sjekk('varsel om avlysning', avlysningsVarsler(aktAvlyst, enkelAvlyst, 'u-ola', vAvlys, () => 'Kari', '2026-10-13').map((v) => [v.tittel, v.tekst]),
+  [['Kari avlyste «Tannlege»', 'ons. 14. okt. kl. 10:00']]);
+sjekk('ikke varsel til den som avlyste', avlysningsVarsler(aktAvlyst, enkelAvlyst, 'u-kari', vAvlys, () => 'Kari', '2026-10-13').length, 0);
+sjekk('ikke varsel når avlysningen er angret', avlysningsVarsler(aktAvlyst, [enkel], 'u-ola', vAvlys, () => 'Kari', '2026-10-13').length, 0);
+sjekk('ikke varsel om avlysning som er over', avlysningsVarsler(aktAvlyst, enkelAvlyst, 'u-ola', vAvlys, () => 'Kari', '2026-10-15').length, 0);
+const serieAvlyst = brukEndring(medIngrid, avlysForekomst(medIngrid, onsdag, 'alle', true));
+const aktSerie: Aktivitet[] = [{ id: 8, bruker: 'u-kari', hva: 'avlyst', listeId: '', hendelseId: 'h1' },
+  ...serieAvlyst.filter((x) => x.serieId).map((x, i) => ({ id: 9 + i, bruker: 'u-kari', hva: 'avlyst' as const, listeId: '', hendelseId: x.id }))];
+sjekk('avlyst serie gir ett varsel', avlysningsVarsler(aktSerie, serieAvlyst, 'u-ola', vAvlys, () => 'Kari', '2026-10-13').map((v) => v.tekst), ['Alle gangene · hverdager']);
 
 // --- Kalenderabonnement (ICS)
 // Oversikten: de neste avtalene, uten dem som er over

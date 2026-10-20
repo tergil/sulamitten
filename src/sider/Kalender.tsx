@@ -1,7 +1,7 @@
 // Felles kalender: uke- og månedsvisning, avtaler med gjentakelser og unntak («bare denne dagen»),
 // bursdager fra gaveårene og frister fra listene. Abonnement for telefonens kalender (Edge Function «kalender»).
 // Logikk: logikk/kalender.ts. Data: data/kalender.ts (tabellen «hendelse»).
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type { Gjentak, KalenderKategoriDef } from '../data/modell';
 import { nyId } from '../data/modell';
 import { endreKalender, lukkKalenderFeil, useKalender } from '../data/kalender';
@@ -10,7 +10,7 @@ import { useTilstand } from '../data/tilstand';
 import { lager } from '../data/lager';
 import { iDag } from '../logikk/beregning';
 import {
-  UKEDAGER_KORT, angreEndring, kalenderKategorier, endreForekomst, kommende, gjentakTekst, kalenderPoster, leggTilDager, mandagI, paaDato,
+  UKEDAGER_KORT, angreEndring, avlysForekomst, kalenderKategorier, endreForekomst, kommende, gjentakTekst, kalenderPoster, leggTilDager, mandagI, paaDato,
   slettForekomst, ukedag, type Avtale, type KalenderPost, type Modus,
 } from '../logikk/kalender';
 import { merkedagerMellom, type Merkedag } from '../logikk/helligdager';
@@ -86,7 +86,7 @@ function PostRad({ post, navn, aapne }: { post: KalenderPost; navn: (id: string)
   const ansvarlig = post.ansvarlig ? navn(post.ansvarlig) : undefined;
   const info = [hvem, post.sted ?? '', post.sluttDato ? `til ${kortDag(post.sluttDato)}` : ''].filter(Boolean).join(' · ');
   return (
-    <button className="rad kal-post" onClick={aapne} style={{ ['--farge' as string]: fargeVar(post.farge) }}>
+    <button className={`rad kal-post${post.avlyst ? ' avlyst' : ''}`} onClick={aapne} style={{ ['--farge' as string]: fargeVar(post.farge) }}>
       <span className="kal-tid tall">
         {post.fra ? <><strong>{post.fra}</strong>{post.til && <span>{post.til}</span>}</> : <span>Heldag</span>}
       </span>
@@ -100,8 +100,9 @@ function PostRad({ post, navn, aapne }: { post: KalenderPost; navn: (id: string)
           </span>
         )}
       </span>
+      {post.avlyst && <span className="merkelapp feil">Avlyst</span>}
       {post.endret && <span className="merkelapp varsel" title="Endret for denne dagen">Endret</span>}
-      {post.gjentar && !post.endret && <span className="dempet" title="Gjentas" aria-label="Gjentas"><Ikon navn="revisjon" storrelse={14} /></span>}
+      {post.gjentar && !post.endret && !post.avlyst && <span className="dempet" title="Gjentas" aria-label="Gjentas"><Ikon navn="revisjon" storrelse={14} /></span>}
     </button>
   );
 }
@@ -211,11 +212,11 @@ export function Kalender({ gaaTil }: { gaaTil: (r: string) => void }) {
                 const celle = (
                   <button key={d} role="gridcell" aria-pressed={d === valgt} onClick={() => setValgt(d)}
                     className={`kal-celle${utenfor ? ' utenfor' : ''}${d === idag ? ' i-dag' : ''}${rod ? ' rod' : ''}`}
-                    aria-label={`${dagTittel(d)}${dagens ? ` (${dagens.map((m) => m.navn).join(', ')})` : ''}: ${her.length} avtaler`}>
+                    aria-label={`${dagTittel(d)}${dagens ? ` (${dagens.map((m) => m.navn).join(', ')})` : ''}: ${her.length} avtaler${her.some((p) => p.avlyst) ? `, ${her.filter((p) => p.avlyst).length} avlyst` : ''}`}>
                     <span className="kal-nr">{Number(d.slice(8))}</span>
                     {dagens && <span className="kal-celle-merkedag">{dagens.map((m) => m.navn).join(' · ')}</span>}
                     <span className="kal-biter">
-                      {her.slice(0, 3).map((p) => <span key={p.nokkel} className="kal-bit" style={{ ['--farge' as string]: fargeVar(p.farge) }}>{p.fra ? `${p.fra} ` : ''}{p.tittel}</span>)}
+                      {her.slice(0, 3).map((p) => <span key={p.nokkel} className={`kal-bit${p.avlyst ? ' avlyst' : ''}`} style={{ ['--farge' as string]: fargeVar(p.farge) }}>{p.fra ? `${p.fra} ` : ''}{p.tittel}</span>)}
                       {her.length > 3 && <span className="kal-flere">+{her.length - 3}</span>}
                     </span>
                   </button>
@@ -270,7 +271,9 @@ function tilGjentak(v: GjentakValg, dato: string, ukedager: number[], til?: stri
   }
 }
 
-const VARSEL_VALG: [string, string][] = [['', 'Ingen'], ['15', '15 min før'], ['30', '30 min før'], ['60', '1 time før'], ['120', '2 timer før'], ['1440', 'Dagen før']];
+type Handling = 'lagre' | 'slett' | 'avlys';
+
+const VARSEL_VALG: [string, string][] =[['', 'Ingen'], ['15', '15 min før'], ['30', '30 min før'], ['60', '1 time før'], ['120', '2 timer før'], ['1440', 'Dagen før']];
 
 export function AvtaleArk({ post, startDato, lukk }: { post?: KalenderPost; startDato: string; lukk: () => void }) {
   const { hendelser } = useKalender();
@@ -295,8 +298,12 @@ export function AvtaleArk({ post, startDato, lukk }: { post?: KalenderPost; star
   const [sted, setSted] = useState(h?.sted ?? '');
   const [notat, setNotat] = useState(h?.notat ?? '');
   const [varsel, setVarsel] = useState(h?.varselMin ? String(h.varselMin) : '');
-  const [modus, setModus] = useState<'lagre' | 'slett' | null>(null);
+  const [modus, setModus] = useState<Handling | null>(null);
   const erSerie = !!f?.serie.gjentak;
+  const erAvlyst = !!h?.innstilt;
+  // Valget av dager står nederst i skjemaet – rull dit (Gjenoppta-knappen står øverst)
+  const modusRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (modus) modusRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, [modus]);
 
   const avtale = (): Avtale => ({
     tittel: tittel.trim(), kategori, dato,
@@ -308,15 +315,21 @@ export function AvtaleArk({ post, startDato, lukk }: { post?: KalenderPost; star
     varselMin: !heldag && varsel ? Number(varsel) : undefined,
   });
 
-  async function utfor(handling: 'lagre' | 'slett', m: Modus) {
+  async function utfor(handling: Handling, m: Modus) {
     const foer = hendelser;
     const endring = handling === 'lagre'
       ? (f ? endreForekomst(hendelser, f, avtale(), m) : { lagre: [{ ...avtale(), id: nyId() }], slett: [] })
+      : handling === 'avlys' ? avlysForekomst(hendelser, f!, m, !erAvlyst)
       : slettForekomst(hendelser, f!, m);
     lukk();
     const ok = await endreKalender(endring);
+    const angre = () => { void endreKalender(angreEndring(foer, endring)); visToast(null); };
     if (ok && handling === 'slett') {
-      visToast({ tekst: m === 'denne' && erSerie ? `«${tittel}» avlyst denne dagen` : `Slettet «${tittel}»`, angre: () => { void endreKalender(angreEndring(foer, endring)); visToast(null); } });
+      visToast({ tekst: m === 'denne' && erSerie ? `«${tittel}» er slettet denne dagen` : `Slettet «${tittel}»`, angre });
+    }
+    if (ok && handling === 'avlys') {
+      const naar = !erSerie || m === 'denne' ? '' : m === 'alle' ? ' – alle gangene' : ` fra ${kortDag(f!.originalDato)}`;
+      visToast({ tekst: erAvlyst ? `«${tittel}» er tilbake i kalenderen${naar}` : `«${tittel}» er avlyst${naar}. Den står igjen, gjennomstreket.`, angre });
     }
     // Bekreftelse bare for nye avtaler (bekreft ikke noe før det faktisk er lagret)
     if (ok && handling === 'lagre' && !f) visToast({ tekst: 'Der ja. Nå er det med i sulamitten.' });
@@ -329,6 +342,12 @@ export function AvtaleArk({ post, startDato, lukk }: { post?: KalenderPost; star
     else void utfor('lagre', 'alle');
   }
 
+  /** Avlys eller gjenoppta. For en serie velges hvilke dager først. */
+  function avlys() {
+    if (erSerie) setModus('avlys');
+    else void utfor('avlys', 'alle');
+  }
+
   const veksle = (liste: string[], id: string) => (liste.includes(id) ? liste.filter((x) => x !== id) : [...liste, id]);
 
   return (
@@ -338,7 +357,14 @@ export function AvtaleArk({ post, startDato, lukk }: { post?: KalenderPost; star
         {erSerie && (
           <div className="banner info">
             <Ikon navn="revisjon" />
-            <div>Gjentas: {gjentakTekst(f!.serie.gjentak, f!.serie.dato).toLowerCase()}. {f!.unntak ? 'Denne dagen er endret fra serien.' : 'Du velger om endringen gjelder bare denne dagen eller flere når du lagrer.'}</div>
+            <div>Gjentas: {gjentakTekst(f!.serie.gjentak, f!.serie.dato).toLowerCase()}. {f!.unntak && !erAvlyst ? 'Denne dagen er endret fra serien.' : 'Du velger om endringen gjelder bare denne dagen eller flere når du lagrer.'}</div>
+          </div>
+        )}
+        {erAvlyst && (
+          <div className="banner feil">
+            <Ikon navn="avlys" />
+            <div><strong>Avlyst.</strong> Står igjen i kalenderen, gjennomstreket.</div>
+            <button type="button" className="knapp liten" onClick={avlys}>Gjenoppta</button>
           </div>
         )}
         <Felt etikett="Hva"><input value={tittel} onChange={(e) => setTittel(e.target.value)} required placeholder="F.eks. Henting barnehagen" autoFocus={!f} /></Felt>
@@ -427,20 +453,26 @@ export function AvtaleArk({ post, startDato, lukk }: { post?: KalenderPost; star
         <Felt etikett="Notat (valgfritt)"><textarea value={notat} onChange={(e) => setNotat(e.target.value)} /></Felt>
 
         {modus ? (
-          <div className="modus-valg" role="group" aria-label="Hvilke dager">
-            <p><strong>{modus === 'lagre' ? 'Endre' : 'Slette'} «{tittel}»</strong> – gjelder det</p>
+          <div className="modus-valg" role="group" aria-label="Hvilke dager" ref={modusRef}>
+            <p><strong>{modus === 'lagre' ? 'Endre' : modus === 'slett' ? 'Slette' : erAvlyst ? 'Gjenoppta' : 'Avlyse'} «{tittel}»</strong> – gjelder det</p>
             <button type="button" className="knapp primar full" onClick={() => void utfor(modus, 'denne')}>Bare {kortDag(f!.originalDato)}</button>
             <button type="button" className="knapp full" onClick={() => void utfor(modus, 'fremover')}>{kortDag(f!.originalDato)} og alle senere</button>
             <button type="button" className={`knapp full${modus === 'slett' ? ' fare' : ''}`} onClick={() => void utfor(modus, 'alle')}>Hele serien</button>
             <button type="button" className="knapp flat full" onClick={() => setModus(null)}>Avbryt</button>
           </div>
         ) : (
+          // To par (slett/avlys og avbryt/lagre), så de brytes parvis på smal skjerm
           <div className="knapperad slutt">
-            {f && (erSerie
-              ? <button type="button" className="knapp flat fare dytt" onClick={() => setModus('slett')}><Ikon navn="slett" storrelse={18} />Slett</button>
-              : <button type="button" className="knapp flat fare dytt" onClick={() => void utfor('slett', 'alle')}><Ikon navn="slett" storrelse={18} />Slett</button>)}
-            <button type="button" className="knapp" onClick={lukk}>Avbryt</button>
-            <button type="submit" className="knapp primar" disabled={!tittel.trim()}>Lagre</button>
+            {f && (
+              <div className="knapperad dytt">
+                <button type="button" className="knapp flat fare" onClick={() => (erSerie ? setModus('slett') : void utfor('slett', 'alle'))}><Ikon navn="slett" storrelse={18} />Slett</button>
+                {!erAvlyst && <button type="button" className="knapp flat" onClick={avlys}><Ikon navn="avlys" storrelse={18} />Avlys</button>}
+              </div>
+            )}
+            <div className="knapperad slutt" style={{ marginLeft: 'auto' }}>
+              <button type="button" className="knapp" onClick={lukk}>Avbryt</button>
+              <button type="submit" className="knapp primar" disabled={!tittel.trim()}>Lagre</button>
+            </div>
           </div>
         )}
       </form>

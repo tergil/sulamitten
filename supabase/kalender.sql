@@ -28,6 +28,31 @@ create policy "medlemmer og avtaler" on public.hendelse for all to authenticated
 revoke all on public.hendelse from anon, authenticated;
 grant select, insert, update, delete on public.hendelse to authenticated;
 
+-- Avlysning: en avlyst avtale har ekstra.innstilt = true (vises gjennomstreket). Når noen avlyser, får den andre varsel:
+-- triggeren legger en rad i «aktivitet» (fra varsler.sql), som Edge Function «varsler» sender og tømmer.
+alter table public.aktivitet alter column liste_id drop not null;
+alter table public.aktivitet add column if not exists hendelse_id uuid;
+
+create or replace function public.logg_hendelse() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null or coalesce((new.ekstra ->> 'innstilt')::boolean, false) = false then
+    return null;
+  end if;
+  -- Var den avlyst fra før, er det ikke noe nytt
+  if tg_op = 'UPDATE' then
+    if coalesce((old.ekstra ->> 'innstilt')::boolean, false) then
+      return null;
+    end if;
+  end if;
+  insert into public.aktivitet (bruker, hva, hendelse_id) values (auth.uid(), 'avlyst', new.id);
+  return null;
+end $$;
+
+drop trigger if exists logg_hendelse on public.hendelse;
+create trigger logg_hendelse after insert or update of ekstra on public.hendelse
+  for each row execute function public.logg_hendelse();
+
 -- Varsel før avtaler: timejobben må gå hvert kvarter i stedet for hver time.
 -- (Daglige varsler sendes fortsatt bare én gang, i første kvarter av timen du har valgt.)
 select cron.alter_job(
