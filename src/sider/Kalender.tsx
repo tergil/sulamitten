@@ -461,19 +461,12 @@ export function AvtaleArk({ post, startDato, lukk }: { post?: KalenderPost; star
             <button type="button" className="knapp flat full" onClick={() => setModus(null)}>Avbryt</button>
           </div>
         ) : (
-          // To par (slett/avlys og avbryt/lagre), så de brytes parvis på smal skjerm
-          <div className="knapperad slutt">
-            {f && (
-              <div className="knapperad dytt">
-                <button type="button" className="knapp flat fare" onClick={() => (erSerie ? setModus('slett') : void utfor('slett', 'alle'))}><Ikon navn="slett" storrelse={18} />Slett</button>
-                {!erAvlyst && <button type="button" className="knapp flat" onClick={avlys}><Ikon navn="avlys" storrelse={18} />Avlys</button>}
-              </div>
-            )}
-            <div className="knapperad slutt" style={{ marginLeft: 'auto' }}>
-              <button type="button" className="knapp" onClick={lukk}>Avbryt</button>
-              <button type="submit" className="knapp primar" disabled={!tittel.trim()}>Lagre</button>
-            </div>
-          </div>
+          // Alt på én linje, uten Avbryt (krysset øverst lukker). Bare ved svært stor tekst vises Slett og Avlys som ikon.
+          <div className="avtale-knapper-boks"><div className="avtale-knapper">
+            {f && <button type="button" className="knapp flat fare" aria-label="Slett" title="Slett" onClick={() => (erSerie ? setModus('slett') : void utfor('slett', 'alle'))}><Ikon navn="slett" storrelse={18} /><span>Slett</span></button>}
+            {f && !erAvlyst && <button type="button" className="knapp flat" aria-label="Avlys" title="Avlys" onClick={avlys}><Ikon navn="avlys" storrelse={18} /><span>Avlys</span></button>}
+            <button type="submit" className="knapp primar dytt-hoyre" disabled={!tittel.trim()}>Lagre</button>
+          </div></div>
         )}
       </form>
     </Ark>

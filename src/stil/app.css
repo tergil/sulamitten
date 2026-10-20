@@ -771,6 +771,15 @@ body.drar-punkt [data-dra-id] { transition: transform .15s ease; }
 .kal-tid strong { color: var(--blekk); font-weight: 600; font-size: 0.875rem; }
 .kal-strek { flex: none; width: 4px; border-radius: 4px; background: var(--farge, var(--noytral-flyt)); margin: 6px 0; }
 .kal-post .hoved { justify-content: center; }
+/* Knappene i avtaleskjemaet: Slett · Avlys … Lagre på én linje. Grensen er i rem, så den følger tekststørrelsen. */
+.avtale-knapper-boks { container-type: inline-size; }
+.avtale-knapper { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--a2); }
+.avtale-knapper .knapp.flat { padding: 0 var(--a2); }
+.avtale-knapper .dytt-hoyre { margin-left: auto; }
+@container (max-width: 17.5rem) {
+  .avtale-knapper .knapp.flat { width: 44px; padding: 0; }
+  .avtale-knapper .knapp.flat span { display: none; }
+}
 /* Avlyst: står igjen, gjennomstreket og dempet (merkelappen «Avlyst» sier det samme i tekst) */
 .kal-post.avlyst .hoved .navn, .kal-post.avlyst .kal-tid { text-decoration: line-through; color: var(--dempet); }
 .kal-post.avlyst .kal-tid strong { color: inherit; }
