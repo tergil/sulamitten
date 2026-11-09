@@ -271,11 +271,8 @@ function Skall() {
     default: innhold = (
       <>
         <KommendeKort gaaTil={gaaTil} />
-        {/* Huskelapp og nedtelling side om side på PC; er bare én av dem i bruk, tar den hele bredden */}
-        <div className="rutenett to fyll">
-          <HuskelappKort gaaTil={gaaTil} />
-          <NedtellingKort gaaTil={gaaTil} />
-        </div>
+        <NedtellingKort gaaTil={gaaTil} />
+        <HuskelappKort gaaTil={gaaTil} />
         <div className="seksjon-gruppe" data-fab="utgift">
           <div className="seksjonstittel">
             <h2>Økonomi</h2>

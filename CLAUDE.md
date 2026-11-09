@@ -39,8 +39,8 @@ Personlige arbeidsinstrukser ligger i `~/.claude/CLAUDE.md`. Denne fila handler 
   kategorier og abonnement (felles).
 - **Navigasjon:** Oversikt · Kalender · Lister · Økonomi (fanene Oppfølging · Budsjett · Sparemål, på alle skjermstørrelser) · Mer.
   Oversikt: «Neste» (`KommendeKort`) – én avtale fremhevet i mørkt kort + stripe med de tre neste (`nesteUtvalg()`: enkeltavtaler
-  i dag/i morgen går foran rutiner som gjentas; det som er over forsvinner, `kommende()`/`erForbi()`). Under: huskelappen og
-  **nedtelling** side om side (`NedtellingKort`, `logikk/nedtelling.ts`; alene = hele bredden, klassen `rutenett to fyll`).
+  i dag/i morgen går foran rutiner som gjentas; det som er over forsvinner, `kommende()`/`erForbi()`). Under: **nedtelling**
+  (`NedtellingKort`, `logikk/nedtelling.ts`) og huskelappen. Stripen er alltid vannrett (sveipes ved stor tekst).
   Nedtelling slås på med `nedtelling` på avtalen eller listepunktet (i `ekstra`, bryter i skjemaene). Så økonomien. Snarveien nede til høyre på Oversikt følger
   seksjonen man ser på (`data-fab`: Ny avtale → Ny liste → Før utgift). Felles/privat-bryteren står over økonomien.
 - **Varsler** (Oppsett → Varsler, `sider/Varsler.tsx`): push til iPhone (hjemskjerm, iOS 16.4+) og Android.

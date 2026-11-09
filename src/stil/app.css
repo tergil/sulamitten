@@ -824,9 +824,6 @@ body.drar-punkt [data-dra-id] { transition: transform .15s ease; }
   .kal-flere { font-size: 11px; padding: 0; }
 }
 
-/* Rutenett der et kort alene tar hele bredden (f.eks. huskelapp uten nedtelling) */
-.rutenett.fyll > :only-child { grid-column: 1 / -1; }
-.rutenett.fyll:empty { display: none; }
 
 /* Nedtelling på Oversikt: det nærmeste stort, med kategorifarge som strek */
 .nedtelling-hoved {
@@ -871,15 +868,21 @@ body.drar-punkt [data-dra-id] { transition: transform .15s ease; }
 }
 .neste-hero-info > span { display: inline-flex; align-items: center; gap: 4px; }
 
-.neste-stripe { position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--a3); margin-top: var(--a4); }
-.neste-stripe::before { content: ''; position: absolute; left: 6px; right: 6px; top: 5px; height: 2px; background: var(--linje); }
+/* Alltid vannrett. Blir det for trangt (stor tekst), kan stripen sveipes sidelengs. Linjen tegnes per punkt, så den følger med. */
+.neste-stripe {
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(5.5rem, 1fr); gap: var(--a3); margin-top: var(--a4);
+  overflow-x: auto; scrollbar-width: none; scroll-snap-type: x proximity; padding: 2px 2px 0;
+}
+.neste-stripe::-webkit-scrollbar { display: none; }
+.neste-bit::after { content: ''; position: absolute; left: 6px; right: calc(-1 * var(--a3)); top: 5px; height: 2px; background: var(--linje); }
+.neste-bit:last-child::after { right: 0; }
 .neste-bit {
   position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0;
-  padding: 20px 2px 2px; background: none; border: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; border-radius: var(--radius-liten);
+  padding: 20px 2px 2px; scroll-snap-align: start; background: none; border: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; border-radius: var(--radius-liten);
 }
 .neste-bit::before {
   content: ''; position: absolute; left: 1px; top: 1px; width: 10px; height: 10px; border-radius: 50%;
-  background: var(--farge, var(--noytral-flyt)); box-shadow: 0 0 0 3px var(--flate);
+  background: var(--farge, var(--noytral-flyt)); box-shadow: 0 0 0 3px var(--flate); z-index: 1;
 }
 .neste-bit:hover .neste-navn { text-decoration: underline; }
 .neste-naar { font-size: 0.6875rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--dempet); }
@@ -891,12 +894,6 @@ body.drar-punkt [data-dra-id] { transition: transform .15s ease; }
 .neste-bit.avlyst .neste-navn { text-decoration: line-through; color: var(--dempet); }
 .neste-bit.avlyst::before { background: var(--flate); box-shadow: inset 0 0 0 2px var(--farge, var(--noytral-flyt)), 0 0 0 3px var(--flate); }
 
-@container neste (max-width: 21rem) {
-  .neste-stripe { grid-template-columns: minmax(0, 1fr); gap: var(--a3); }
-  .neste-stripe::before { left: 5px; right: auto; top: 8px; bottom: 8px; width: 2px; height: auto; }
-  .neste-bit { padding: 0 0 0 24px; }
-  .neste-bit::before { top: 3px; }
-}
 /* Bredt kort (PC): fremhevet til venstre, stripen til høyre */
 @container neste (min-width: 46rem) {
   .neste-innhold { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: var(--a5); align-items: center; }
