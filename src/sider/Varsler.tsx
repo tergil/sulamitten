@@ -26,6 +26,8 @@ const AKTIVITET: typeof TYPER = [
   { type: 'nyttPunkt', ikon: 'rediger', navn: 'Nytt i delte lister', tekst: 'Når den andre legger til noe – ti ting på handlelisten blir ett varsel.', valg: [] },
   { type: 'gaveide', ikon: 'gave', navn: 'Nye gaveideer', tekst: 'Når den andre legger inn en gaveidé i et felles gaveår.', valg: [] },
   { type: 'kjopt', ikon: 'pose', navn: 'Noe er kjøpt', tekst: 'Når den andre markerer en gave eller et ønske som kjøpt.', valg: [] },
+  { type: 'nyAvtale', ikon: 'kalender', navn: 'Nye avtaler', tekst: 'Når den andre legger inn noe i kalenderen – så ingen kan si «det har jeg jo fortalt deg».', valg: [] },
+  { type: 'endretAvtale', ikon: 'revisjon', navn: 'Endrede dager', tekst: 'Når den andre endrer én dag i en serie – f.eks. hvem som henter, eller et annet klokkeslett.', valg: [] },
   { type: 'avlyst', ikon: 'avlys', navn: 'Avlyste avtaler', tekst: 'Når den andre avlyser en avtale i kalenderen.', valg: [] },
 ];
 

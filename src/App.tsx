@@ -7,7 +7,7 @@ import { Oversikt } from './sider/Oversikt';
 import { Budsjett } from './sider/Budsjett';
 import { NyPrivatRevisjon, PrivatBudsjett, PrivatOversikt } from './sider/Privat';
 import { HuskelappKort, Lister, NyListeArk } from './sider/Lister';
-import { AvtaleArk, Kalender, KalenderValg, KommendeKort } from './sider/Kalender';
+import { AvtaleArk, Kalender, KalenderValg, KommendeKort, NedtellingKort } from './sider/Kalender';
 import { iDag } from './logikk/beregning';
 import { Varsler } from './sider/Varsler';
 import { Innboks } from './sider/Innboks';
@@ -270,9 +270,11 @@ function Skall() {
     // Oversikt: kalender og huskelapp først, økonomien under (med felles/privat-bryteren der)
     default: innhold = (
       <>
-        <div className="rutenett to">
-          <KommendeKort gaaTil={gaaTil} />
+        <KommendeKort gaaTil={gaaTil} />
+        {/* Huskelapp og nedtelling side om side på PC; er bare én av dem i bruk, tar den hele bredden */}
+        <div className="rutenett to fyll">
           <HuskelappKort gaaTil={gaaTil} />
+          <NedtellingKort gaaTil={gaaTil} />
         </div>
         <div className="seksjon-gruppe" data-fab="utgift">
           <div className="seksjonstittel">

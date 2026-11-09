@@ -824,7 +824,87 @@ body.drar-punkt [data-dra-id] { transition: transform .15s ease; }
   .kal-flere { font-size: 11px; padding: 0; }
 }
 
-/* Oversikt: neste 7 dager */
+/* Rutenett der et kort alene tar hele bredden (f.eks. huskelapp uten nedtelling) */
+.rutenett.fyll > :only-child { grid-column: 1 / -1; }
+.rutenett.fyll:empty { display: none; }
+
+/* Nedtelling på Oversikt: det nærmeste stort, med kategorifarge som strek */
+.nedtelling-hoved {
+  display: flex; align-items: center; gap: var(--a4); width: 100%; text-align: left;
+  padding: var(--a3) var(--a4); border-radius: var(--radius); background: var(--flate-2);
+  border: 0; border-left: 4px solid var(--farge, var(--noytral-flyt)); color: inherit; font: inherit; cursor: pointer;
+}
+.nedtelling-hoved:hover { background: var(--aksent-myk); }
+.nedtelling-tall { display: flex; align-items: baseline; gap: var(--a2); flex: none; color: var(--aksent); }
+.nedtelling-tall span { display: inline-flex; align-items: baseline; gap: 3px; }
+.nedtelling-tall strong { font-family: var(--font-tittel); font-weight: 800; font-size: 2.5rem; line-height: 1; letter-spacing: -0.02em; }
+.nedtelling-tall small { font-size: 0.875rem; font-weight: 700; color: var(--dempet); }
+.nedtelling-tekst { display: flex; flex-direction: column; min-width: 0; }
+.nedtelling-tekst .navn { font-weight: 650; overflow-wrap: anywhere; }
+.nedtelling-tekst .info { font-size: 0.75rem; color: var(--dempet); }
+.nedtelling .liste { margin-top: var(--a2); }
+.nedtelling .rad .merkelapp { flex: none; }
+
+/* Oversikt: «Neste» – fremhevet avtale (mørk flate) og stripen med de tre neste.
+   Stripen blir loddrett når kortet er smalt eller teksten stor (grensen i rem følger tekststørrelsen). */
+.kort.neste { container: neste / inline-size; }
+.neste-hero {
+  display: flex; flex-direction: column; align-items: stretch; gap: 2px; width: 100%; text-align: left;
+  border: 0; font: inherit; cursor: pointer; border-radius: var(--radius); padding: var(--a4);
+  background: var(--aksent); color: var(--paa-aksent);
+}
+.neste-hero:hover { background: var(--aksent-hover); }
+.neste-hero-topp {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--a2); flex-wrap: wrap;
+  font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+  color: color-mix(in srgb, var(--paa-aksent) 85%, transparent);
+}
+.neste-om {
+  text-transform: none; letter-spacing: 0; font-weight: 800; font-size: 0.8125rem; white-space: nowrap; font-variant-numeric: tabular-nums;
+  padding: 3px 10px; border-radius: 999px; background: var(--paa-aksent); color: var(--aksent);
+}
+.neste-hero-tittel { font-family: var(--font-tittel); font-weight: 800; font-size: 1.5rem; line-height: 1.15; margin-top: var(--a2); overflow-wrap: anywhere; }
+.neste-hero-tid { font-family: var(--font-tittel); font-weight: 800; font-size: 1rem; font-variant-numeric: tabular-nums; }
+.neste-hero-info {
+  display: flex; flex-wrap: wrap; gap: 4px var(--a3); margin-top: var(--a2); font-size: 0.8125rem;
+  color: color-mix(in srgb, var(--paa-aksent) 88%, transparent);
+}
+.neste-hero-info > span { display: inline-flex; align-items: center; gap: 4px; }
+
+.neste-stripe { position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--a3); margin-top: var(--a4); }
+.neste-stripe::before { content: ''; position: absolute; left: 6px; right: 6px; top: 5px; height: 2px; background: var(--linje); }
+.neste-bit {
+  position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0;
+  padding: 20px 2px 2px; background: none; border: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; border-radius: var(--radius-liten);
+}
+.neste-bit::before {
+  content: ''; position: absolute; left: 1px; top: 1px; width: 10px; height: 10px; border-radius: 50%;
+  background: var(--farge, var(--noytral-flyt)); box-shadow: 0 0 0 3px var(--flate);
+}
+.neste-bit:hover .neste-navn { text-decoration: underline; }
+.neste-naar { font-size: 0.6875rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--dempet); }
+.neste-navn {
+  font-weight: 600; font-size: 0.875rem; line-height: 1.25; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.neste-info { font-size: 0.75rem; color: var(--dempet); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.neste-bit.avlyst .neste-navn { text-decoration: line-through; color: var(--dempet); }
+.neste-bit.avlyst::before { background: var(--flate); box-shadow: inset 0 0 0 2px var(--farge, var(--noytral-flyt)), 0 0 0 3px var(--flate); }
+
+@container neste (max-width: 21rem) {
+  .neste-stripe { grid-template-columns: minmax(0, 1fr); gap: var(--a3); }
+  .neste-stripe::before { left: 5px; right: auto; top: 8px; bottom: 8px; width: 2px; height: auto; }
+  .neste-bit { padding: 0 0 0 24px; }
+  .neste-bit::before { top: 3px; }
+}
+/* Bredt kort (PC): fremhevet til venstre, stripen til høyre */
+@container neste (min-width: 46rem) {
+  .neste-innhold { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: var(--a5); align-items: center; }
+  .neste-stripe { margin-top: 0; }
+  .neste-hero-tittel { font-size: 1.75rem; }
+}
+
+/* Dager som overskrift (innboksen) */
 .kal-mini + .kal-mini { margin-top: var(--a2); }
 .kal-mini-dag { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--dempet); padding: var(--a2) var(--a1) 0; }
 .kal-mini-dag.i-dag { color: var(--aksent); }

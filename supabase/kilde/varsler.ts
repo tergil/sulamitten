@@ -14,7 +14,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 import webpush from 'npm:web-push@3.6.7';
 import type { VarselInnstillinger } from '../../src/data/modell';
 import {
-  AKTIVITETSTYPER, aktivitetsVarsler, avlysningsVarsler, beregnVarsler, forVarsler, medStandard, norskTid, slaaSammen, utenDetaljer,
+  AKTIVITETSTYPER, aktivitetsVarsler, avlysningsVarsler, beregnVarsler, endredeDagerVarsler, forVarsler, medStandard, norskTid, nyeAvtalerVarsler, slaaSammen, utenDetaljer,
   type Aktivitet, type Melding, type Varsel,
 } from '../../src/logikk/varsler';
 import { hentAlt, navnFra } from './felles';
@@ -154,6 +154,8 @@ async function behandle(req: Request): Promise<Response> {
     if (aktiviteter.length) {
       kandidater.push(...aktivitetsVarsler(aktiviteter, delteLister, synligePunkter, bruker, inn, (b) => personer.get(b)?.navn));
       kandidater.push(...avlysningsVarsler(aktiviteter, hendelser, bruker, inn, (b) => personer.get(b)?.navn, dato));
+      kandidater.push(...nyeAvtalerVarsler(aktiviteter, hendelser, bruker, inn, (b) => personer.get(b)?.navn, dato));
+      kandidater.push(...endredeDagerVarsler(aktiviteter, hendelser, bruker, inn, (b) => personer.get(b)?.navn, navn, dato));
     }
     if (!kandidater.length) continue;
 
@@ -172,13 +174,13 @@ async function behandle(req: Request): Promise<Response> {
 
     const { data: enheter } = await db.from('varsel_abonnement').select('id, bruker, endpoint, p256dh, auth').eq('bruker', bruker);
     if (!enheter?.length) continue;
-    // Varsel før en avtale og avlysninger kommer alltid alene (tidskritisk); resten slås sammen når det er mange
+    // Varsel før en avtale, avlysninger og endrede dager kommer alltid alene (tidskritisk); resten slås sammen når det er mange
     const enkelt = (v: Varsel): Melding => ({ tittel: v.tittel, tekst: v.tekst, url: v.url, nokler: v.nokler, type: v.type });
-    const alene = (v: Varsel) => v.type === 'avtaleFor' || v.type === 'avlyst';
+    const alene = (v: Varsel) => v.type === 'avtaleFor' || v.type === 'avlyst' || v.type === 'endretAvtale';
     const alleMeldinger = [
       ...nye.filter(alene).map(enkelt),
       ...slaaSammen(nye.filter((v) => !alene(v) && !AKTIVITETSTYPER.includes(v.type))),
-      ...slaaSammen(nye.filter((v) => !alene(v) && AKTIVITETSTYPER.includes(v.type)), 2, (n) => `${n} nye ting i delte lister`),
+      ...slaaSammen(nye.filter((v) => !alene(v) && AKTIVITETSTYPER.includes(v.type)), 2, (n) => `${n} nye ting i lister og kalender`),
     ];
     // «Skjul detaljer»: ingen navn, gaver eller avtaler på låseskjermen – varselet åpner bjella i appen
     const meldinger = inn.skjulDetaljer ? utenDetaljer(alleMeldinger) : alleMeldinger;

@@ -261,11 +261,12 @@ export function demoHendelser(idag = iDag()): Hendelse[] {
     { id: 'demo-h2u', tittel: 'Henting barnehagen', kategori: 'barnehage', dato: torsdag, fra: '15:30', til: '16:00', hvem: ['emma', 'jonas'], ansvarlig: 'kari', serieId: 'demo-h2', originalDato: torsdag, notat: 'Ola på kurs' },
     { id: 'demo-h3', tittel: 'Fotball Emma', kategori: 'trening', dato: om(1 - ukedag + 1), fra: '17:30', til: '18:30', gjentak: { frekvens: 'uke', intervall: 1 }, hvem: ['emma'], ansvarlig: 'ola', sted: 'Kunstgresset', varselMin: 60 },
     { id: 'demo-h4', tittel: 'Svømming Jonas', kategori: 'trening', dato: om(1 - ukedag + 5), fra: '10:00', til: '11:00', gjentak: { frekvens: 'uke', intervall: 2 }, hvem: ['jonas'], ansvarlig: 'kari', sted: 'Badeland' },
-    { id: 'demo-h5', tittel: 'Foreldremøte', kategori: 'mote', dato: om(9), fra: '19:00', til: '20:30', hvem: ['kari', 'ola'], sted: 'Barnehagen' },
+    { id: 'demo-h5', tittel: 'Foreldremøte', kategori: 'mote', dato: om(9), fra: '19:00', til: '20:30', hvem: ['kari', 'ola'], sted: 'Barnehagen', nedtelling: true },
     // Fotball neste uke er avlyst (vises gjennomstreket)
     { id: 'demo-h3u', tittel: 'Fotball Emma', kategori: 'trening', dato: om(1 - ukedag + 8), fra: '17:30', til: '18:30', hvem: ['emma'], ansvarlig: 'ola', sted: 'Kunstgresset', varselMin: 60, serieId: 'demo-h3', originalDato: om(1 - ukedag + 8), innstilt: true },
     { id: 'demo-h6', tittel: 'Middag hos naboene', kategori: 'sosialt', dato: om(6 - ukedag + 7 > 7 ? 6 - ukedag : 6 - ukedag + 7), fra: '18:00', hvem: ['kari', 'ola', 'emma', 'jonas'] },
-    { id: 'demo-h7', tittel: 'Besteforeldre på besøk', kategori: 'besok', dato: om(13 - ukedag + 6), sluttDato: om(13 - ukedag + 7), hvem: [] },
+    { id: 'demo-h7', tittel: 'Besteforeldre på besøk', kategori: 'besok', dato: om(13 - ukedag + 6), sluttDato: om(13 - ukedag + 7), hvem: [], nedtelling: true },
+    { id: 'demo-h8', tittel: 'Tannlege Emma', kategori: 'annet', dato: om(1), fra: '14:30', til: '15:00', hvem: ['emma'], ansvarlig: 'kari', sted: 'Tannhelsetjenesten' },
   ];
 }
 
@@ -273,6 +274,7 @@ export function demoHendelser(idag = iDag()): Hendelse[] {
 export function demoInnboks(naa = new Date()): InnboksVarsel[] {
   const siden = (min: number) => new Date(naa.getTime() - min * 60_000).toISOString();
   return [
+    { id: 'demo-vn', type: 'nyAvtale', tittel: 'Kari la inn «Foreldremøte»', tekst: 'Om 9 dager kl. 19:00 · Barnehagen', url: '#/kalender', opprettet: siden(4), lest: false },
     { id: 'demo-v0', type: 'avlyst', tittel: 'Kari avlyste «Fotball Emma»', tekst: 'Neste tirsdag kl. 17:30 · Kunstgresset', url: '#/kalender', opprettet: siden(10), lest: false },
     { id: 'demo-v1', type: 'nyttPunkt', tittel: 'Nytt i Handleliste', tekst: 'Kari la til melk, rugbrød og kaffe.', url: '#/lister', opprettet: siden(25), lest: false },
     { id: 'demo-v2', type: 'avtaler', tittel: 'I dag: 2 avtaler', tekst: '16:00 Henting barnehagen – Ola\n18:30 Fotballtrening', url: '#/kalender', opprettet: siden(60 * 7), lest: true },

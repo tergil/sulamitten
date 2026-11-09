@@ -10,10 +10,11 @@ import { useTilstand } from '../data/tilstand';
 import { lager } from '../data/lager';
 import { iDag } from '../logikk/beregning';
 import {
-  UKEDAGER_KORT, angreEndring, avlysForekomst, kalenderKategorier, endreForekomst, kommende, gjentakTekst, kalenderPoster, leggTilDager, mandagI, paaDato,
+  UKEDAGER_KORT, angreEndring, avlysForekomst, kalenderKategorier, endreForekomst, kommende, gjentakTekst, kalenderPoster, leggTilDager, mandagI, nesteUtvalg, paaDato,
   slettForekomst, ukedag, type Avtale, type KalenderPost, type Modus,
 } from '../logikk/kalender';
 import { merkedagerMellom, type Merkedag } from '../logikk/helligdager';
+import { nedtellinger, tidIgjen, type Nedtelling } from '../logikk/nedtelling';
 import { Ark, Fargevalg, Felt, Ikon, Prikk, Segment, useBekreft } from '../ui/felles';
 
 // ---------------------------------------------------------------- Hjelpere
@@ -298,6 +299,7 @@ export function AvtaleArk({ post, startDato, lukk }: { post?: KalenderPost; star
   const [sted, setSted] = useState(h?.sted ?? '');
   const [notat, setNotat] = useState(h?.notat ?? '');
   const [varsel, setVarsel] = useState(h?.varselMin ? String(h.varselMin) : '');
+  const [nedtelling, setNedtelling] = useState(!!h?.nedtelling);
   const [modus, setModus] = useState<Handling | null>(null);
   const erSerie = !!f?.serie.gjentak;
   const erAvlyst = !!h?.innstilt;
@@ -313,6 +315,7 @@ export function AvtaleArk({ post, startDato, lukk }: { post?: KalenderPost; star
     gjentak: tilGjentak(gjentak, dato, ukedager, gjentakTil),
     hvem, ansvarlig: ansvarlig || undefined, sted: sted.trim() || undefined, notat: notat.trim() || undefined,
     varselMin: !heldag && varsel ? Number(varsel) : undefined,
+    nedtelling: nedtelling || undefined,
   });
 
   async function utfor(handling: Handling, m: Modus) {
@@ -450,6 +453,13 @@ export function AvtaleArk({ post, startDato, lukk }: { post?: KalenderPost; star
             </select>
           </Felt>
         )}
+        <label className="rad" style={{ cursor: 'pointer', minHeight: 44, borderBottom: 0 }}>
+          <span className="hoved">
+            <span className="navn">Nedtelling på Oversikt</span>
+            <span className="info" style={{ whiteSpace: 'normal' }}>{gjentak !== 'ingen' ? 'Teller ned til neste gang.' : 'Dager igjen – og timer og minutter det siste døgnet.'}</span>
+          </span>
+          <input type="checkbox" className="bryter" checked={nedtelling} onChange={(e) => setNedtelling(e.target.checked)} />
+        </label>
         <Felt etikett="Notat (valgfritt)"><textarea value={notat} onChange={(e) => setNotat(e.target.value)} /></Felt>
 
         {modus ? (
@@ -574,7 +584,7 @@ function AbonnerArk({ lukk }: { lukk: () => void }) {
  * endrede dager – ikke faste rutiner som henting hver dag (de står i kalenderen).
  */
 /** Dato og minutt nå – oppdateres hvert minutt, så avtaler som er over forsvinner av seg selv */
-function useNaa() {
+export function useNaa() {
   const les = () => { const d = new Date(); return { dato: iDag(), minutt: d.getHours() * 60 + d.getMinutes() }; };
   const [naa, setNaa] = useState(les);
   useEffect(() => {
@@ -584,7 +594,10 @@ function useNaa() {
   return naa;
 }
 
-/** Oversikten: de neste fem avtalene (det som er over, er borte – også i dag) */
+/**
+ * Oversikten: «Neste». Én avtale fremhevet – en enkeltavtale i dag eller i morgen går foran faste rutiner (henting o.l.),
+ * ellers det aller neste – og de tre neste i en stripe under. Det som er over, er borte (også i dag).
+ */
 export function KommendeKort({ gaaTil }: { gaaTil: (r: string) => void }) {
   const { hendelser, lastet } = useKalender();
   const { lister, punkter } = useLister();
@@ -593,35 +606,141 @@ export function KommendeKort({ gaaTil }: { gaaTil: (r: string) => void }) {
   const idag = naa.dato;
   const imorgen = leggTilDager(idag, 1);
   const kategorier = useKategorier();
-  // Leter 60 dager fram for å finne fem
+  // Leter 60 dager fram. Flere enn som vises, så en enkeltavtale i morgen kan finnes bak dagens rutiner.
   const neste = useMemo(() => kommende(
-    kalenderPoster(hendelser, lister, punkter, idag, leggTilDager(idag, 60), { anledninger: true, frister: false }, kategorier), naa, 5,
+    kalenderPoster(hendelser, lister, punkter, idag, leggTilDager(idag, 60), { anledninger: true, frister: false }, kategorier), naa, 12,
   ), [hendelser, lister, punkter, kategorier, naa, idag]);
   const merkedager = useMerkedager(idag, leggTilDager(idag, 60), false);
   if (!lastet) return null;
 
+  const { fremhevet, resten } = nesteUtvalg(neste, idag, 3);
   const aapne = (p: KalenderPost) => gaaTil(p.url ? p.url.replace(/^#\//, '') : 'kalender');
-  const dagTekst = (d: string) => (d === idag ? `I dag · ${kortDag(d)}` : d === imorgen ? `I morgen · ${kortDag(d)}`
-    : stor(somDato(d).toLocaleDateString('nb-NO', { weekday: 'long', day: 'numeric', month: 'short' })));
-  const dager = [...new Set(neste.map((x) => x.dag))];
+  const ukedagNavn = (d: string) => somDato(d).toLocaleDateString('nb-NO', { weekday: 'long' });
+  const dagLang = (d: string) => (d === idag ? `I dag · ${ukedagNavn(d)}` : d === imorgen ? `I morgen · ${ukedagNavn(d)}`
+    : stor(somDato(d).toLocaleDateString('nb-NO', { weekday: 'long', day: 'numeric', month: 'long' })));
+  const dagKort = (d: string) => (d === idag ? 'I dag' : d === imorgen ? 'I morgen'
+    : stor(somDato(d).toLocaleDateString('nb-NO', { weekday: 'short', day: 'numeric', month: 'short' })));
 
   return (
-    <section className="kort" data-fab="avtale">
+    <section className="kort neste" data-fab="avtale">
       <div className="kort-hode">
         <div className="tittel">
-          <h2><button className="tittel-lenke" onClick={() => gaaTil('kalender')}>Kalender<Ikon navn="pilhoyre" storrelse={18} /></button></h2>
-          <span className="dempet liten">Det neste som skjer</span>
+          <h2><button className="tittel-lenke" onClick={() => gaaTil('kalender')}>Neste<Ikon navn="pilhoyre" storrelse={18} /></button></h2>
+          <span className="dempet liten">Fra kalenderen</span>
         </div>
       </div>
-      {dager.length === 0 && <p className="dempet liten kal-tom">Kalenderen er tom akkurat nå. Det betyr ikke nødvendigvis at dere har fri.</p>}
-      {dager.map((d) => (
-        <div className="kal-mini" key={d}>
-          <div className={`kal-mini-dag${d === idag ? ' i-dag' : ''}`}>{dagTekst(d)}<MerkedagLapper dager={merkedager.get(d)} /></div>
-          <div className="liste">
-            {neste.filter((x) => x.dag === d).map(({ post }) => <PostRad key={post.nokkel} post={post} navn={navn} aapne={() => aapne(post)} />)}
-          </div>
+      {!fremhevet && <p className="dempet liten kal-tom">Kalenderen er tom akkurat nå. Det betyr ikke nødvendigvis at dere har fri.</p>}
+      {fremhevet && (
+        <div className="neste-innhold">
+          <NesteHero post={fremhevet.post} dag={fremhevet.dag} naa={naa} navn={navn} dagTekst={dagLang(fremhevet.dag)}
+            merkedager={merkedager.get(fremhevet.dag)} aapne={() => aapne(fremhevet.post)} />
+          {resten.length > 0 && (
+            <div className="neste-stripe">
+              {resten.map(({ dag, post }) => {
+                const hvem = post.ansvarlig ? navn(post.ansvarlig) : undefined;
+                return (
+                  <button key={post.nokkel} className={`neste-bit${post.avlyst ? ' avlyst' : ''}`} onClick={() => aapne(post)} style={{ ['--farge' as string]: fargeVar(post.farge) }}>
+                    <span className="neste-naar">{dagKort(dag)}</span>
+                    <span className="neste-navn">{post.tittel}</span>
+                    <span className="neste-info">{post.avlyst ? 'Avlyst' : [post.fra ?? 'Hele dagen', hvem ?? post.sted].filter(Boolean).join(' · ')}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
-      ))}
+      )}
+    </section>
+  );
+}
+
+/** Den fremhevede avtalen: mørkt kort med tid igjen, hvem som henter, hvem det gjelder og sted */
+function NesteHero({ post, dag, naa, navn, dagTekst, merkedager, aapne }: {
+  post: KalenderPost; dag: string; naa: { dato: string; minutt: number }; navn: (id: string) => string | undefined;
+  dagTekst: string; merkedager?: Merkedag[]; aapne: () => void;
+}) {
+  const tid = tidIgjen(dag, dag === post.dato ? post.fra : undefined, naa);
+  // Klokkeslett: «om 2 t 15 min». Hele dagen sier dagen nok («I dag», «I morgen»), men lenger fram: «om 3 dager».
+  const om = tid.tekst === 'Nå' ? 'Pågår nå' : post.fra || tid.deler[0].enhet ? `om ${tid.deler.map((d) => `${d.tall} ${d.enhet}`.trim()).join(' ')}` : null;
+  const ansvarlig = post.ansvarlig ? navn(post.ansvarlig) : undefined;
+  const hvem = post.hvem.map(navn).filter(Boolean).join(', ');
+  const tidTekst = post.fra ? `${post.fra}${post.til ? ` – ${post.til}` : ''}` : post.sluttDato ? `Hele dagen, til ${kortDag(post.sluttDato)}` : 'Hele dagen';
+  return (
+    <button className="neste-hero" onClick={aapne}>
+      <span className="neste-hero-topp">
+        <span>{dagTekst}{merkedager?.length ? ` · ${merkedager.map((m) => m.navn).join(', ')}` : ''}</span>
+        {om && <span className="neste-om">{om}</span>}
+      </span>
+      <span className="neste-hero-tittel">{post.tittel}</span>
+      <span className="neste-hero-tid">{tidTekst}</span>
+      {(ansvarlig || hvem || post.sted || post.endret) && (
+        <span className="neste-hero-info">
+          {ansvarlig && <span title="Henter, leverer eller følger"><Ikon navn="person" storrelse={14} />{ansvarlig}</span>}
+          {hvem && <span>{ansvarlig ? `for ${hvem}` : hvem}</span>}
+          {post.sted && <span><Ikon navn="sted" storrelse={14} />{post.sted}</span>}
+          {post.endret && <span><Ikon navn="revisjon" storrelse={14} />Endret denne dagen</span>}
+        </span>
+      )}
+    </button>
+  );
+}
+
+/** «Lør. 19. des. kl. 07:30» – med «I dag»/«I morgen» når det passer */
+function naarTekst(n: Nedtelling, idag: string): string {
+  const dag = n.dato === idag ? 'I dag' : n.dato === leggTilDager(idag, 1) ? 'I morgen' : stor(somDato(n.dato).toLocaleDateString('nb-NO', { weekday: 'short', day: 'numeric', month: 'short' }));
+  return `${dag}${n.fra ? ` kl. ${n.fra}` : ''}`;
+}
+
+/**
+ * Oversikten: det som er merket «Vis nedtelling» (avtaler og listepunkter med dato). Det nærmeste stort,
+ * de neste tre som rader under. Vises ikke når ingenting er merket.
+ */
+export function NedtellingKort({ gaaTil }: { gaaTil: (r: string) => void }) {
+  const { hendelser, lastet } = useKalender();
+  const { lister, punkter } = useLister();
+  const kategorier = useKategorier();
+  const naa = useNaa();
+  const alle = useMemo(() => nedtellinger(hendelser, lister, punkter, naa, kategorier), [hendelser, lister, punkter, naa, kategorier]);
+  if (!lastet || !alle.length) return null;
+
+  const [forst, ...resten] = alle;
+  const tid = tidIgjen(forst.dato, forst.fra, naa);
+  const aapne = (n: Nedtelling) => gaaTil(n.kilde === 'punkt' ? `lister/${n.liste!.id}` : 'kalender');
+  const hvor = (n: Nedtelling) => (n.kilde === 'punkt' ? n.liste!.navn : kategorier.find((k) => k.id === n.post?.forekomst?.hendelse.kategori)?.navn);
+
+  return (
+    <section className="kort nedtelling">
+      <div className="kort-hode">
+        <div className="tittel">
+          <h2>Nedtelling</h2>
+          <span className="dempet liten">{alle.length === 1 ? 'Det dere venter på' : `${alle.length} ting å telle ned til`}</span>
+        </div>
+      </div>
+      <button className={`nedtelling-hoved${tid.snart ? ' snart' : ''}`} onClick={() => aapne(forst)} style={{ ['--farge' as string]: fargeVar(forst.farge) }}
+        aria-label={`${forst.tittel}: ${tid.tekst === 'Nå' ? 'nå' : tid.tekst.startsWith('I ') ? tid.tekst.toLowerCase() : `om ${tid.tekst}`}`}>
+        <span className="nedtelling-tall tall" aria-hidden="true">
+          {tid.deler.map((d) => <span key={d.enhet + d.tall}><strong>{d.tall}</strong>{d.enhet && <small>{d.enhet}</small>}</span>)}
+        </span>
+        <span className="nedtelling-tekst">
+          <span className="navn">{forst.tittel}</span>
+          <span className="info">{[naarTekst(forst, naa.dato), hvor(forst)].filter(Boolean).join(' · ')}</span>
+        </span>
+      </button>
+      {resten.length > 0 && (
+        <div className="liste">
+          {resten.slice(0, 3).map((n) => (
+            <button className="rad kal-post" key={n.nokkel} onClick={() => aapne(n)} style={{ ['--farge' as string]: fargeVar(n.farge) }}>
+              <span className="kal-strek" aria-hidden="true" />
+              <span className="hoved">
+                <span className="navn">{n.tittel}</span>
+                <span className="info">{[naarTekst(n, naa.dato), hvor(n)].filter(Boolean).join(' · ')}</span>
+              </span>
+              <span className="merkelapp tall">{tidIgjen(n.dato, n.fra, naa).tekst}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {resten.length > 3 && <p className="dempet liten" style={{ padding: '8px 4px 0' }}>+ {resten.length - 3} til</p>}
     </section>
   );
 }

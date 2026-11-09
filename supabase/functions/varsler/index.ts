@@ -66,6 +66,16 @@ const STANDARD_VARSLER = {
 		avlyst: {
 			pa: true,
 			dager: [0]
+		},
+		/** Den andre legger inn en ny avtale i kalenderen */
+		nyAvtale: {
+			pa: true,
+			dager: [0]
+		},
+		/** Den andre endrer (eller tar bort) én dag i en serie, f.eks. hvem som henter */
+		endretAvtale: {
+			pa: true,
+			dager: [0]
 		}
 	}
 };
@@ -788,7 +798,9 @@ const AKTIVITETSTYPER = [
 	"nyttPunkt",
 	"gaveide",
 	"kjopt",
-	"avlyst"
+	"avlyst",
+	"nyAvtale",
+	"endretAvtale"
 ];
 /** «Melk, brød og egg» – maks fire, resten som «og 3 til» */
 function opplisting(tekster, maks = 4) {
@@ -895,6 +907,121 @@ function avlysningsVarsler(aktiviteter, hendelser, mottaker, innstillinger, navn
 	}
 	return ut;
 }
+/** «I dag kl. 18:00 · Skolen», «tor. 12. nov.», «Fra man. 16. nov. · hver uke» */
+function avtaleNaar(h, iDag) {
+	const imorgen = leggTilDager(iDag, 1);
+	if (h.gjentak) {
+		const monster = gjentakTekst(h.gjentak, h.dato).toLowerCase();
+		if (h.dato <= iDag) return `${monster.charAt(0).toUpperCase()}${monster.slice(1)}`;
+		return `Fra ${h.dato === imorgen ? "i morgen" : datoKort(h.dato)} · ${monster}`;
+	}
+	const dag = (d) => d === iDag ? "I dag" : d === imorgen ? "I morgen" : datoKort(d);
+	return `${dag(h.dato)}${h.fra ? ` kl. ${h.fra}` : ""}${h.sluttDato ? ` – ${datoKort(h.sluttDato)}` : ""}${h.sted ? ` · ${h.sted}` : ""}`;
+}
+/**
+* Varsel når den andre legger inn nye avtaler. Én melding per person, så fem nye avtaler blir ett varsel.
+* Bare det som fortsatt finnes, ikke er avlyst og ikke er over. Ikke nytt: en serie som deles i to («denne og fremover»,
+* stoppes i databasen), en endret dag i en serie (unntak) og en avtale som legges tilbake med «Angre» etter sletting.
+*/
+function nyeAvtalerVarsler(aktiviteter, hendelser, mottaker, innstillinger, navn, iDag) {
+	if (!medStandard(innstillinger).typer.nyAvtale.pa) return [];
+	const hendelseMap = new Map(hendelser.map((h) => [h.id, h]));
+	const slettet = /* @__PURE__ */ new Map();
+	for (const a of aktiviteter) if (a.hva === "slettet" && a.hendelseId && !slettet.has(a.hendelseId)) slettet.set(a.hendelseId, a.id);
+	const perBruker = /* @__PURE__ */ new Map();
+	for (const a of aktiviteter) {
+		if (a.hva !== "avtale" || !a.hendelseId || a.bruker === mottaker) continue;
+		if ((slettet.get(a.hendelseId) ?? Infinity) < a.id) continue;
+		const h = hendelseMap.get(a.hendelseId);
+		if (!h || h.serieId || h.innstilt || h.fortsetter) continue;
+		if (h.gjentak ? !!h.gjentak.til && h.gjentak.til < iDag : (h.sluttDato ?? h.dato) < iDag) continue;
+		const g = perBruker.get(a.bruker) ?? {
+			maks: 0,
+			avtaler: []
+		};
+		if (!g.avtaler.includes(h)) g.avtaler.push(h);
+		g.maks = Math.max(g.maks, a.id);
+		perBruker.set(a.bruker, g);
+	}
+	return [...perBruker].map(([bruker, { maks, avtaler }]) => {
+		const hvem = navn(bruker) ?? "Noen";
+		const sortert = [...avtaler].sort((a, b) => a.dato.localeCompare(b.dato) || (a.fra ?? "").localeCompare(b.fra ?? ""));
+		const nokkel = `aktivitet:nyAvtale:${bruker}:${maks}`;
+		const en = sortert.length === 1;
+		return {
+			type: "nyAvtale",
+			nokkel,
+			nokler: [nokkel],
+			tittel: en ? `${hvem} la inn «${sortert[0].tittel}»` : `${hvem} la inn ${sortert.length} nye avtaler`,
+			tekst: en ? avtaleNaar(sortert[0], iDag) : `${opplisting(sortert.map((h) => `${h.tittel} (${datoKort(h.dato)})`), 3)}.`,
+			url: "#/kalender"
+		};
+	});
+}
+/** «I dag», «I morgen» eller «tor. 12. nov.» – liten forbokstav (står inne i en setning) */
+function dagISetning(d, iDag) {
+	return d === iDag ? "i dag" : d === leggTilDager(iDag, 1) ? "i morgen" : datoKort(d);
+}
+/** Hva som er annerledes denne dagen enn ellers i serien: «Ingrid i stedet for Terje · 15:30 i stedet for 16:00» */
+function endringIDag(u, serie, personNavn, iDag) {
+	if (u.avlyst) return "Tatt bort denne dagen. Resten av serien er som før.";
+	const deler = [];
+	const hvem = (id) => id ? personNavn(id) ?? "en annen" : "ingen";
+	if (u.originalDato && u.dato !== u.originalDato) deler.push(`flyttet til ${dagISetning(u.dato, iDag)}`);
+	if ((u.ansvarlig ?? "") !== (serie.ansvarlig ?? "")) deler.push(`${hvem(u.ansvarlig)} i stedet for ${hvem(serie.ansvarlig)}`);
+	if ((u.fra ?? "") !== (serie.fra ?? "") || (u.til ?? "") !== (serie.til ?? "")) {
+		const tid = (h) => h.fra ? `${h.fra}${h.til ? `–${h.til}` : ""}` : "hele dagen";
+		deler.push(`${tid(u)} i stedet for ${tid(serie)}`);
+	}
+	if ((u.sted ?? "") !== (serie.sted ?? "")) deler.push(u.sted ? `sted: ${u.sted}` : "uten sted");
+	if (u.tittel !== serie.tittel) deler.push(`heter «${u.tittel}»`);
+	if ((u.notat ?? "") !== (serie.notat ?? "") && u.notat) deler.push(`«${u.notat.length > 60 ? `${u.notat.slice(0, 57)}…` : u.notat}»`);
+	const tekst = deler.length ? deler.join(" · ") : "detaljene er endret";
+	return `${tekst.charAt(0).toUpperCase()}${tekst.slice(1)}`;
+}
+/**
+* Varsel når den andre endrer eller tar bort én dag i en serie (f.eks. bytter hvem som henter). Én melding per person.
+* Bare dager som ikke er over, og som fortsatt er endret. Avlyste dager har eget varsel, og en serie som er ny
+* i samme runde varsles som ny avtale.
+*/
+function endredeDagerVarsler(aktiviteter, hendelser, mottaker, innstillinger, navn, personNavn, iDag) {
+	if (!medStandard(innstillinger).typer.endretAvtale.pa) return [];
+	const hendelseMap = new Map(hendelser.map((h) => [h.id, h]));
+	const nyeSerier = new Set(aktiviteter.filter((a) => a.hva === "avtale").map((a) => a.hendelseId));
+	const perBruker = /* @__PURE__ */ new Map();
+	for (const a of aktiviteter) {
+		if (a.hva !== "endret" || !a.hendelseId || a.bruker === mottaker) continue;
+		const u = hendelseMap.get(a.hendelseId);
+		const serie = u?.serieId ? hendelseMap.get(u.serieId) : void 0;
+		if (!u || !serie || u.innstilt || nyeSerier.has(serie.id)) continue;
+		if ((u.originalDato ?? u.dato) < iDag && u.dato < iDag) continue;
+		const g = perBruker.get(a.bruker) ?? {
+			maks: 0,
+			dager: []
+		};
+		if (!g.dager.some((x) => x.u.id === u.id)) g.dager.push({
+			u,
+			serie
+		});
+		g.maks = Math.max(g.maks, a.id);
+		perBruker.set(a.bruker, g);
+	}
+	return [...perBruker].map(([bruker, { maks, dager }]) => {
+		const hvem = navn(bruker) ?? "Noen";
+		const dag = (x) => x.u.originalDato ?? x.u.dato;
+		const sortert = [...dager].sort((a, b) => dag(a).localeCompare(dag(b)));
+		const nokkel = `aktivitet:endretAvtale:${bruker}:${maks}`;
+		const [f] = sortert;
+		return {
+			type: "endretAvtale",
+			nokkel,
+			nokler: [nokkel],
+			tittel: sortert.length > 1 ? `${hvem} endret ${sortert.length} avtaler` : `${hvem} ${f.u.avlyst ? "tok bort" : "endret"} «${f.serie.tittel}» ${dagISetning(dag(f), iDag)}`,
+			tekst: sortert.length > 1 ? `${opplisting(sortert.map((x) => `${x.serie.tittel} (${datoKort(dag(x))})`), 3)}.` : endringIDag(f.u, f.serie, personNavn, iDag),
+			url: "#/kalender"
+		};
+	});
+}
 /** Mange varsler blir ett samlet varsel, så telefonen ikke fylles opp. Det samlede åpner varslene i appen. */
 function slaaSammen(varsler, maks = 3, samletTittel = (n) => `${n} påminnelser i dag`) {
 	if (varsler.length <= maks) return varsler.map((v) => ({
@@ -919,7 +1046,7 @@ function utenDetaljer(meldinger) {
 	return meldinger.map((m) => ({
 		...m,
 		tittel: "Sulamitten",
-		tekst: m.type === "avtaleFor" ? "En avtale nærmer seg. Åpne appen for å se hvilken." : m.type === "avlyst" ? "En avtale er avlyst. Åpne appen for å se hvilken." : m.type && AKTIVITETSTYPER.includes(m.type) ? "Det er nytt i en delt liste. Åpne appen for å se hva." : "Det er noe å huske på i dag. Åpne appen for å se hva.",
+		tekst: m.type === "avtaleFor" ? "En avtale nærmer seg. Åpne appen for å se hvilken." : m.type === "avlyst" ? "En avtale er avlyst. Åpne appen for å se hvilken." : m.type === "endretAvtale" ? "En avtale er endret. Åpne appen for å se hvilken." : m.type === "nyAvtale" ? "Det er nytt i kalenderen. Åpne appen for å se hva." : m.type && AKTIVITETSTYPER.includes(m.type) ? "Det er nytt i en delt liste. Åpne appen for å se hva." : "Det er noe å huske på i dag. Åpne appen for å se hva.",
 		url: "#/innboks"
 	}));
 }
@@ -1156,6 +1283,8 @@ async function behandle(req) {
 		if (aktiviteter.length) {
 			kandidater.push(...aktivitetsVarsler(aktiviteter, delteLister, synligePunkter, bruker, inn, (b) => personer.get(b)?.navn));
 			kandidater.push(...avlysningsVarsler(aktiviteter, hendelser, bruker, inn, (b) => personer.get(b)?.navn, dato));
+			kandidater.push(...nyeAvtalerVarsler(aktiviteter, hendelser, bruker, inn, (b) => personer.get(b)?.navn, dato));
+			kandidater.push(...endredeDagerVarsler(aktiviteter, hendelser, bruker, inn, (b) => personer.get(b)?.navn, navn, dato));
 		}
 		if (!kandidater.length) continue;
 		const { data: sendtFor } = await db.from("varsel_sendt").select("nokkel").eq("bruker", bruker).in("nokkel", kandidater.map((k) => k.nokkel));
@@ -1187,11 +1316,11 @@ async function behandle(req) {
 			nokler: v.nokler,
 			type: v.type
 		});
-		const alene = (v) => v.type === "avtaleFor" || v.type === "avlyst";
+		const alene = (v) => v.type === "avtaleFor" || v.type === "avlyst" || v.type === "endretAvtale";
 		const alleMeldinger = [
 			...nye.filter(alene).map(enkelt),
 			...slaaSammen(nye.filter((v) => !alene(v) && !AKTIVITETSTYPER.includes(v.type))),
-			...slaaSammen(nye.filter((v) => !alene(v) && AKTIVITETSTYPER.includes(v.type)), 2, (n) => `${n} nye ting i delte lister`)
+			...slaaSammen(nye.filter((v) => !alene(v) && AKTIVITETSTYPER.includes(v.type)), 2, (n) => `${n} nye ting i lister og kalender`)
 		];
 		const meldinger = inn.skjulDetaljer ? utenDetaljer(alleMeldinger) : alleMeldinger;
 		let antall = 0;

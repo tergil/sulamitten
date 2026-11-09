@@ -179,7 +179,7 @@ export function endreForekomst(hendelser: Hendelse[], f: Forekomst, ny: Avtale, 
   // Denne og fremover: den gamle serien slutter dagen før, en ny begynner her
   const gammel: Hendelse = { ...serie, gjentak: { ...serie.gjentak, til: leggTilDager(f.originalDato, -1) } };
   const nyId_ = nyId();
-  const nySerie: Hendelse = { innstilt: serie.innstilt, ...ny, id: nyId_ };
+  const nySerie: Hendelse = { innstilt: serie.innstilt, ...ny, id: nyId_, fortsetter: serie.fortsetter ?? serie.id };
   const etter = unntakI.filter((u) => u.originalDato! >= f.originalDato);
   return {
     lagre: [gammel, nySerie, ...(nyttMonster ? [] : etter.filter((u) => u.originalDato !== f.originalDato).map((u) => ({ ...u, serieId: nyId_ })))],
@@ -340,6 +340,17 @@ export function kommende(poster: KalenderPost[], naa: { dato: string; minutt: nu
     .map((post) => ({ dag: post.dato < naa.dato ? naa.dato : post.dato, post }))
     .sort((a, b) => a.dag.localeCompare(b.dag) || (a.dag === a.post.dato ? a.post.fra ?? '' : '').localeCompare(b.dag === b.post.dato ? b.post.fra ?? '' : '') || a.post.tittel.localeCompare(b.post.tittel, 'nb'))
     .slice(0, antall);
+}
+
+/**
+ * Oversiktens «Neste»: hva som fremheves, og stripen under. En enkeltavtale (ikke en rutine som gjentas) i dag eller
+ * i morgen går foran rutinene – ellers fremheves det aller neste. Avlyste fremheves aldri. Stripen er resten i tidsrekkefølge.
+ */
+export function nesteUtvalg<T extends { dag: string; post: KalenderPost }>(neste: T[], iDag: string, antall = 3): { fremhevet?: T; resten: T[] } {
+  const imorgen = leggTilDager(iDag, 1);
+  const aktuelle = neste.filter((x) => !x.post.avlyst);
+  const fremhevet = aktuelle.find((x) => !x.post.gjentar && x.dag <= imorgen) ?? aktuelle[0];
+  return { fremhevet, resten: neste.filter((x) => x !== fremhevet).slice(0, antall) };
 }
 
 /** Endringen som angrer en annen: legger tilbake det som ble endret/slettet, og sletter det som ble laget */

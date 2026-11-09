@@ -1184,6 +1184,12 @@ export function PunktArk({ liste, start, ny, alle, historikk, lagre, lukk, aapne
           </div>
         )}
         {har('dato') && type !== 'kalender' && <p className="dempet liten" style={{ marginTop: -8 }}>Med dato vises punktet på huskelappen de siste 14 dagene før.</p>}
+        {har('dato') && p.dato && (
+          <label className="rad" style={{ cursor: 'pointer', minHeight: 44, borderBottom: 0 }}>
+            <span className="hoved"><span className="navn">Nedtelling på Oversikt</span><span className="info" style={{ whiteSpace: 'normal' }}>Dager igjen til {ukedagDato(p.dato)}.</span></span>
+            <input type="checkbox" className="bryter" checked={!!p.nedtelling} onChange={(e) => sett({ nedtelling: e.target.checked || undefined })} />
+          </label>
+        )}
 
         {har('vurdering') && <div className="felt"><span>Vurdering</span><Stjerner verdi={p.vurdering} endre={(v) => sett({ vurdering: v })} /></div>}
 

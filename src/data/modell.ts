@@ -254,6 +254,8 @@ export interface Punkt {
   anledning?: string;
   /** Gaveår, felles: person-id til den som betaler. Tom = felles. */
   betaler?: Id;
+  /** Vises som nedtelling på Oversikt (krever dato) */
+  nedtelling?: boolean;
 }
 
 export type AnledningType = 'bursdag' | 'jul' | 'morsdag' | 'farsdag' | 'egen';
@@ -294,9 +296,9 @@ export interface DeltListe {
 // Varsler (push): innstillinger per bruker. Sendes av Edge Function «varsler» (se supabase/varsler.sql).
 // ---------------------------------------------------------------------------
 
-/** De siste fem er det den andre gjør i delte lister og kalenderen (sendes fortløpende, ikke på et fast klokkeslett) */
+/** De siste sju er det den andre gjør i delte lister og kalenderen (sendes fortløpende, ikke på et fast klokkeslett) */
 export type VarselType = 'bursdag' | 'jul' | 'andre' | 'frist' | 'kalender' | 'hage' | 'avtaler' | 'avtaleFor'
-  | 'nyListe' | 'nyttPunkt' | 'gaveide' | 'kjopt' | 'avlyst';
+  | 'nyListe' | 'nyttPunkt' | 'gaveide' | 'kjopt' | 'avlyst' | 'nyAvtale' | 'endretAvtale';
 
 export interface VarselValg {
   pa: boolean;
@@ -338,6 +340,10 @@ export const STANDARD_VARSLER: VarselInnstillinger = {
     kjopt: { pa: true, dager: [0] },
     /** Den andre avlyser en avtale i kalenderen */
     avlyst: { pa: true, dager: [0] },
+    /** Den andre legger inn en ny avtale i kalenderen */
+    nyAvtale: { pa: true, dager: [0] },
+    /** Den andre endrer (eller tar bort) én dag i en serie, f.eks. hvem som henter */
+    endretAvtale: { pa: true, dager: [0] },
   },
 };
 
@@ -405,6 +411,10 @@ export interface Hendelse {
   notat?: string;
   /** Varsel så mange minutter før (krever klokkeslett) */
   varselMin?: number;
+  /** Vises som nedtelling på Oversikt (en serie: til neste gang) */
+  nedtelling?: boolean;
+  /** Serien denne fortsetter («denne og fremover» deler en serie i to). Den nye delen er ikke en ny avtale og varsles ikke. */
+  fortsetter?: Id;
   /** Avlyst, men vises fortsatt (gjennomstreket). Ikke det samme som «avlyst» under, som betyr at dagen er slettet fra serien. */
   innstilt?: boolean;
   /** Unntak i en serie: denne raden erstatter (eller sletter) forekomsten originalDato i serien serieId */

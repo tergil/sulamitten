@@ -11,9 +11,11 @@ import {
 import type { Hendelse, Post, Punkt, Saldo, Utgift, VarselInnstillinger } from '../src/data/modell';
 import type { KalenderPost } from '../src/logikk/kalender';
 import { brett, icsTekst, lagIcs } from '../src/logikk/ics';
-import { angreEndring, avlysForekomst, endreForekomst, erForbi, kommende, forekomster as kalForekomster, gjentakTekst, kalenderPoster, sammeMonster, slettForekomst } from '../src/logikk/kalender';
+import { angreEndring, avlysForekomst, endreForekomst, erForbi, kommende, forekomster as kalForekomster, gjentakTekst, kalenderPoster, nesteUtvalg, sammeMonster, slettForekomst } from '../src/logikk/kalender';
 import { STANDARD_VARSLER } from '../src/data/modell';
-import { aktivitetsVarsler, avlysningsVarsler, beregnVarsler, forVarsler, medStandard, norskTid, slaaSammen, utenDetaljer, varseltrinn, type Aktivitet } from '../src/logikk/varsler';
+import { aktivitetsVarsler, avlysningsVarsler, beregnVarsler, endredeDagerVarsler, forVarsler, medStandard, norskTid, nyeAvtalerVarsler, slaaSammen, utenDetaljer, varseltrinn, type Aktivitet } from '../src/logikk/varsler';
+import { nedtellinger, tidIgjen } from '../src/logikk/nedtelling';
+import type { Liste } from '../src/data/modell';
 import { merkedager, merkedagerMellom, paaskedag } from '../src/logikk/helligdager';
 
 let feil = 0;
@@ -465,6 +467,79 @@ const serieAvlyst = brukEndring(medIngrid, avlysForekomst(medIngrid, onsdag, 'al
 const aktSerie: Aktivitet[] = [{ id: 8, bruker: 'u-kari', hva: 'avlyst', listeId: '', hendelseId: 'h1' },
   ...serieAvlyst.filter((x) => x.serieId).map((x, i) => ({ id: 9 + i, bruker: 'u-kari', hva: 'avlyst' as const, listeId: '', hendelseId: x.id }))];
 sjekk('avlyst serie gir ett varsel', avlysningsVarsler(aktSerie, serieAvlyst, 'u-ola', vAvlys, () => 'Kari', '2026-10-13').map((v) => v.tekst), ['Alle gangene · hverdager']);
+
+// --- Varsel om nye avtaler
+const ny = (id: number, hendelseId: string, hva: Aktivitet['hva'] = 'avtale', bruker = 'u-kari'): Aktivitet => ({ id, bruker, hva, listeId: '', hendelseId });
+const nyeTekst = (akt: Aktivitet[], alle: Hendelse[], mottaker = 'u-ola', dag = '2026-10-13') =>
+  nyeAvtalerVarsler(akt, alle, mottaker, vAvlys, () => 'Kari', dag).map((v) => [v.tittel, v.tekst]);
+const foreldremote: Hendelse = { id: 'fm', tittel: 'Foreldremøte', kategori: 'annet', dato: '2026-10-14', fra: '18:00', hvem: [], sted: 'Skolen' };
+sjekk('ny avtale', nyeTekst([ny(1, 'fm')], [foreldremote]), [['Kari la inn «Foreldremøte»', 'I morgen kl. 18:00 · Skolen']]);
+sjekk('ny avtale: ikke til den som la den inn', nyeTekst([ny(1, 'fm')], [foreldremote], 'u-kari').length, 0);
+sjekk('ny avtale: slettet igjen gir ikke varsel', nyeTekst([ny(1, 'fm'), ny(2, 'fm', 'slettet')], []).length, 0);
+sjekk('ny avtale: angret sletting er ikke ny', nyeTekst([ny(1, 'fm', 'slettet'), ny(2, 'fm')], [foreldremote]).length, 0);
+sjekk('ny avtale: over allerede', nyeTekst([ny(1, 'fm')], [foreldremote], 'u-ola', '2026-10-15').length, 0);
+sjekk('ny avtale: av noen uten navn', nyeAvtalerVarsler([ny(1, 'fm')], [foreldremote], 'u-ola', vAvlys, () => undefined, '2026-10-13')[0].tittel, 'Noen la inn «Foreldremøte»');
+sjekk('nye avtaler: én melding, sortert på dato', nyeTekst([ny(1, 'fm'), ny(2, 'e'), ny(3, 'h1')], [foreldremote, enkel, henting]),
+  [['Kari la inn 3 nye avtaler', 'Henting barnehagen (man. 12. okt.), Tannlege (ons. 14. okt.) og Foreldremøte (ons. 14. okt.).']]);
+sjekk('ny serie fram i tid', nyeTekst([ny(1, 'h1')], [{ ...henting, dato: '2026-10-19' }]), [['Kari la inn «Henting barnehagen»', 'Fra man. 19. okt. · hverdager']]);
+sjekk('serie som deles i to er ikke ny', nyeTekst([ny(1, 'ny')], [{ ...henting, id: 'ny', fortsetter: 'h1' }]).length, 0);
+sjekk('«denne og fremover» merker den nye delen', endreForekomst(medIngrid, onsdag, { ...henting, dato: '2026-10-14', fra: '15:00' }, 'fremover').lagre[1].fortsetter, 'h1');
+const vAv = structuredClone(STANDARD_VARSLER); vAv.typer.nyAvtale.pa = false;
+sjekk('nye avtaler kan slås av', nyeAvtalerVarsler([ny(1, 'fm')], [foreldremote], 'u-ola', vAv, () => 'Kari', '2026-10-13').length, 0);
+sjekk('gamle innstillinger får nye avtaler på', medStandard({ typer: { avlyst: { pa: false, dager: [0] } } } as never).typer.nyAvtale.pa, true);
+
+// --- Varsel om endrede dager i en serie (medIngrid: torsdag 15. okt. henter Ingrid i stedet for Terje)
+const torsdagU = medIngrid.find((x) => x.serieId)!;
+const folkNavn = (id: string) => ({ terje: 'Terje', ingrid: 'Ingrid' } as Record<string, string>)[id];
+const endret = (akt: Aktivitet[], alle: Hendelse[], mottaker = 'u-ola', dag = '2026-10-13') =>
+  endredeDagerVarsler(akt, alle, mottaker, vAvlys, () => 'Kari', folkNavn, dag).map((v) => [v.tittel, v.tekst]);
+sjekk('endret dag: hvem henter', endret([ny(1, torsdagU.id, 'endret')], medIngrid),
+  [['Kari endret «Henting barnehagen» tor. 15. okt.', 'Ingrid i stedet for Terje']]);
+sjekk('endret dag: ikke til den som endret', endret([ny(1, torsdagU.id, 'endret')], medIngrid, 'u-kari').length, 0);
+sjekk('endret dag: over allerede', endret([ny(1, torsdagU.id, 'endret')], medIngrid, 'u-ola', '2026-10-16').length, 0);
+sjekk('endret dag: angret (unntaket er borte)', endret([ny(1, torsdagU.id, 'endret')], [henting]).length, 0);
+const flyttetTid = brukEndring(medIngrid, endreForekomst(medIngrid, torsdag(), { ...henting, dato: '2026-10-16', fra: '15:00', til: '15:30', ansvarlig: 'ingrid' }, 'denne'));
+sjekk('endret dag: flyttet og ny tid', endret([ny(1, torsdagU.id, 'endret')], flyttetTid, 'u-ola', '2026-10-15')[0][1],
+  'Flyttet til i morgen · Ingrid i stedet for Terje · 15:00–15:30 i stedet for 16:00–16:30');
+const fjernetFre = brukEndring(medIngrid, slettForekomst(medIngrid, fredag, 'denne'));
+const fjernetId = fjernetFre.find((x) => x.avlyst)!.id;
+sjekk('dag tatt bort', endret([ny(1, fjernetId, 'endret')], fjernetFre),
+  [['Kari tok bort «Henting barnehagen» fre. 16. okt.', 'Tatt bort denne dagen. Resten av serien er som før.']]);
+sjekk('flere endrede dager: én melding', endret([ny(1, torsdagU.id, 'endret'), ny(2, fjernetId, 'endret'), ny(3, torsdagU.id, 'endret')], fjernetFre)[0][0], 'Kari endret 2 avtaler');
+sjekk('avlyst dag gir ikke også «endret»', endret([ny(1, 'u', 'endret')], [henting, { ...torsdagU, id: 'u', innstilt: true }]).length, 0);
+
+// --- «Neste» på Oversikt: enkeltavtaler i dag/i morgen foran rutiner
+const nPost = (tittel: string, dag: string, gjentar = false, avlyst = false) =>
+  ({ dag, post: { nokkel: tittel, dato: dag, tittel, farge: 0, hvem: [], kilde: 'avtale', gjentar, avlyst } as KalenderPost });
+const rutineIDag = nPost('Henting', '2026-11-09', true);
+const utvalg = (liste: ReturnType<typeof nPost>[]) => { const u = nesteUtvalg(liste, '2026-11-09'); return [u.fremhevet?.post.tittel, u.resten.map((x) => x.post.tittel)]; };
+sjekk('neste: tannlege i morgen foran henting i dag', utvalg([rutineIDag, nPost('Levering', '2026-11-10', true), nPost('Tannlege', '2026-11-10'), nPost('Fotball', '2026-11-10', true)]),
+  ['Tannlege', ['Henting', 'Levering', 'Fotball']]);
+sjekk('neste: bare rutiner – det aller neste', utvalg([rutineIDag, nPost('Levering', '2026-11-10', true)]), ['Henting', ['Levering']]);
+sjekk('neste: enkeltavtale om tre dager fremheves ikke', utvalg([rutineIDag, nPost('Foreldremøte', '2026-11-12')]), ['Henting', ['Foreldremøte']]);
+sjekk('neste: avlyst fremheves ikke', utvalg([nPost('Tannlege', '2026-11-09', false, true), rutineIDag]), ['Henting', ['Tannlege']]);
+sjekk('neste: tomt', utvalg([]), [undefined, []]);
+
+// --- Nedtelling
+const ferie: Hendelse = { id: 'f', tittel: 'Syden', kategori: 'annet', dato: '2026-12-19', fra: '07:30', hvem: [], nedtelling: true };
+const naaN = { dato: '2026-11-09', minutt: 12 * 60 };
+sjekk('nedtelling: dager', tidIgjen('2026-12-19', '07:30', naaN).tekst, '40 dager');
+sjekk('nedtelling: siste døgnet før', tidIgjen('2026-11-10', '18:00', { dato: '2026-11-09', minutt: 9 * 60 }).tekst, '1 dag og 9 timer');
+sjekk('nedtelling: timer og minutter', tidIgjen('2026-11-10', '07:30', { dato: '2026-11-09', minutt: 22 * 60 + 15 }).deler, [{ tall: '9', enhet: 't' }, { tall: '15', enhet: 'min' }]);
+sjekk('nedtelling: minutter', tidIgjen('2026-11-09', '12:45', naaN).tekst, '45 minutter');
+sjekk('nedtelling: nå', tidIgjen('2026-11-09', '11:00', naaN).tekst, 'Nå');
+sjekk('nedtelling: hele dagen', ['2026-11-09', '2026-11-10', '2026-11-12'].map((d) => tidIgjen(d, undefined, naaN).tekst), ['I dag', 'I morgen', '3 dager']);
+const ukeTrening: Hendelse = { id: 't', tittel: 'Trening', kategori: 'annet', dato: '2026-11-02', fra: '18:00', hvem: [], gjentak: { frekvens: 'uke', intervall: 1, ukedager: [1] }, nedtelling: true };
+const nListe = { id: 'l', navn: 'Ting', ikon: 'liste', kategori: 'Hjem', type: 'oppgave', privat: false, mal: false, rekkefolge: 0 } as unknown as Liste;
+const nPunkt = (id: string, dato: string, status = 'ny', nedtelling = true): Punkt =>
+  ({ id, listeId: 'l', forelderId: null, tekst: `Punkt ${id}`, notat: '', status, belop: null, dato, rekkefolge: 0, nedtelling });
+const ned = (h: Hendelse[], p: Punkt[] = [], naa = naaN) => nedtellinger(h, [nListe], p, naa).map((x) => `${x.dato} ${x.tittel}`);
+sjekk('nedtellinger: serie til neste gang, sortert', ned([ferie, ukeTrening, enkel], [nPunkt('a', '2026-11-20'), nPunkt('b', '2026-11-01'), nPunkt('c', '2026-11-11', 'ny', false)]),
+  ['2026-11-09 Trening', '2026-11-20 Punkt a', '2026-12-19 Syden']);
+sjekk('nedtellinger: neste gang når dagens er over', ned([ukeTrening], [], { dato: '2026-11-09', minutt: 20 * 60 }), ['2026-11-16 Trening']);
+sjekk('nedtellinger: ferdig punkt er borte', ned([], [nPunkt('a', '2026-11-20', 'ferdig')]), []);
+const treningAvlyst = brukEndring([ukeTrening], avlysForekomst([ukeTrening], kalForekomster([ukeTrening], '2026-11-09', '2026-11-09')[0], 'denne', true));
+sjekk('nedtellinger: hopper over avlyst dag', ned(treningAvlyst), ['2026-11-16 Trening']);
 
 // --- Kalenderabonnement (ICS)
 // Oversikten: de neste avtalene, uten dem som er over

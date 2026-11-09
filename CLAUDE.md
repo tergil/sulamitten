@@ -37,8 +37,11 @@ Personlige arbeidsinstrukser ligger i `~/.claude/CLAUDE.md`. Denne fila handler 
   med rød dato. De er ikke avtaler (`kalenderPoster` tar dem ikke med) og er derfor heller ikke i abonnementet.
   Innstillinger: Mer → Kalender (`#/kalendervalg`, `KalenderValg`) – ukenummer og merkedager (per enhet, `localStorage`),
   kategorier og abonnement (felles).
-- **Navigasjon:** Oversikt · Kalender · Lister · Økonomi (fanene Oppfølging · Budsjett · Sparemål, på alle skjermstørrelser) · Mer. Oversikt viser de neste 5 avtalene
-  (det som er over forsvinner, `kommende()`/`erForbi()`), huskelappen og økonomien. Snarveien nede til høyre på Oversikt følger
+- **Navigasjon:** Oversikt · Kalender · Lister · Økonomi (fanene Oppfølging · Budsjett · Sparemål, på alle skjermstørrelser) · Mer.
+  Oversikt: «Neste» (`KommendeKort`) – én avtale fremhevet i mørkt kort + stripe med de tre neste (`nesteUtvalg()`: enkeltavtaler
+  i dag/i morgen går foran rutiner som gjentas; det som er over forsvinner, `kommende()`/`erForbi()`). Under: huskelappen og
+  **nedtelling** side om side (`NedtellingKort`, `logikk/nedtelling.ts`; alene = hele bredden, klassen `rutenett to fyll`).
+  Nedtelling slås på med `nedtelling` på avtalen eller listepunktet (i `ekstra`, bryter i skjemaene). Så økonomien. Snarveien nede til høyre på Oversikt følger
   seksjonen man ser på (`data-fab`: Ny avtale → Ny liste → Før utgift). Felles/privat-bryteren står over økonomien.
 - **Varsler** (Oppsett → Varsler, `sider/Varsler.tsx`): push til iPhone (hjemskjerm, iOS 16.4+) og Android.
   Edge Function «varsler» kjøres hvert kvarter av pg_cron (daglige varsler i første kvarter av valgt time, «før avtale» hver gang), regner ut med `logikk/varsler.ts` og sender til brukerne som
@@ -50,6 +53,9 @@ Personlige arbeidsinstrukser ligger i `~/.claude/CLAUDE.md`. Denne fila handler 
   (iPhone åpner ofte startsiden i stedet for lenken).
   **Delte lister** (`nyListe`, `nyttPunkt`, `gaveide`, `kjopt`): databasetriggere fyller `aktivitet`, funksjonen lager ett varsel
   per liste og type (`aktivitetsVarsler()`) og tømmer tabellen. Ikke mellom 22 og 07. «Kjøpt» = status `kjopt` (ikke «gjort»).
+  **Kalenderen** (`nyAvtale`, `endretAvtale`, `avlyst`): triggeren `logg_hendelse` logger `avtale`/`endret`/`avlyst`/`slettet`.
+  `fortsetter` (i `ekstra`) merker den nye delen når en serie deles («denne og fremover») – den er ikke ny. `slettet` gjør at
+  «Angre» etter sletting ikke varsles som ny. Endrede dager og avlysninger sendes alene (tidskritisk).
 - **Deling** (Valg → Del liste): som tekst (øyeblikksbilde) eller lenke `#/delt/<nøkkel>` som vises uten innlogging
   (`sider/Delt.tsx`). Bare det som ikke er kjøpt/gjort deles, og aldri vedlegg.
 - Status: POC i grenen `poc`.

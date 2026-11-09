@@ -33,13 +33,48 @@ grant select, insert, update, delete on public.hendelse to authenticated;
 alter table public.aktivitet alter column liste_id drop not null;
 alter table public.aktivitet add column if not exists hendelse_id uuid;
 
+-- Hva som logges:
+--   'avtale'  ny avtale. Ikke: den nye delen når en serie deles i to («denne og fremover», ekstra.fortsetter).
+--   'endret'  en enkeltdag i en serie er endret eller tatt bort (rad med serie_id). Ikke når unntaket bare flyttes
+--             over til en ny serie (serie_id endres) eller bare avlysningen endres (det er 'avlyst').
+--   'avlyst'  avtalen ble avlyst (ekstra.innstilt).
+--   'slettet' en avtale/serie ble slettet – så «Angre» (samme id lagt inn igjen) ikke varsles som ny.
 create or replace function public.logg_hendelse() returns trigger
 language plpgsql security definer set search_path = public as $$
+declare
+  avlyst_na boolean;
 begin
-  if auth.uid() is null or coalesce((new.ekstra ->> 'innstilt')::boolean, false) = false then
+  if auth.uid() is null then
     return null;
   end if;
-  -- Var den avlyst fra før, er det ikke noe nytt
+  if tg_op = 'DELETE' then
+    if old.serie_id is null then
+      insert into public.aktivitet (bruker, hva, hendelse_id) values (auth.uid(), 'slettet', old.id);
+    end if;
+    return null;
+  end if;
+  avlyst_na := coalesce((new.ekstra ->> 'innstilt')::boolean, false);
+
+  if tg_op = 'INSERT' and new.serie_id is null and not (new.ekstra ? 'fortsetter') and not avlyst_na then
+    insert into public.aktivitet (bruker, hva, hendelse_id) values (auth.uid(), 'avtale', new.id);
+    return null;
+  end if;
+
+  -- Endret enkeltdag i en serie
+  if new.serie_id is not null and not avlyst_na then
+    if tg_op = 'INSERT' then
+      insert into public.aktivitet (bruker, hva, hendelse_id) values (auth.uid(), 'endret', new.id);
+    elsif old.serie_id is not distinct from new.serie_id and (
+        (old.ekstra - 'innstilt') is distinct from (new.ekstra - 'innstilt')
+        or old.dato is distinct from new.dato or old.tittel is distinct from new.tittel or old.avlyst is distinct from new.avlyst) then
+      insert into public.aktivitet (bruker, hva, hendelse_id) values (auth.uid(), 'endret', new.id);
+    end if;
+  end if;
+
+  -- Avlysning (var den avlyst fra før, er det ikke noe nytt)
+  if not avlyst_na then
+    return null;
+  end if;
   if tg_op = 'UPDATE' then
     if coalesce((old.ekstra ->> 'innstilt')::boolean, false) then
       return null;
@@ -50,7 +85,7 @@ begin
 end $$;
 
 drop trigger if exists logg_hendelse on public.hendelse;
-create trigger logg_hendelse after insert or update of ekstra on public.hendelse
+create trigger logg_hendelse after insert or update or delete on public.hendelse
   for each row execute function public.logg_hendelse();
 
 -- Varsel før avtaler: timejobben må gå hvert kvarter i stedet for hver time.
