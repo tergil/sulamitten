@@ -137,8 +137,7 @@ export function GaveaarSide({ liste, gaaTil }: { liste: Liste; gaaTil: (r: strin
   const [aapen, setAapen] = useState<string | null>(null);
   const [valg, setValg] = useState(false);
   const [endrer, setEndrer] = useState(false);
-  const [nyMottaker, setNyMottaker] = useState('');
-  const [nyPrivat, setNyPrivat] = useState(false);
+  const [nyMottaker, setNyMottaker] = useState(false);
   const [visning, setVisningRaa] = useState<Visning>(lesVisning);
   const setVisning = (v: Visning) => { setVisningRaa(v); try { localStorage.setItem(VISNING, v); } catch { /* ignorer */ } };
   const [filter, setFilterRaa] = useState<Filter>(lesFilter);
@@ -167,20 +166,20 @@ export function GaveaarSide({ liste, gaaTil }: { liste: Liste; gaaTil: (r: strin
   const perMaaned = new Map<string, Forekomst[]>();
   for (const f of tidslinje) perMaaned.set(f.dato.slice(0, 7), [...(perMaaned.get(f.dato.slice(0, 7)) ?? []), f]);
 
-  async function leggTilMottaker(e: FormEvent) {
-    e.preventDefault();
-    const navn = nyMottaker.trim();
-    if (!navn) return;
-    const til = await hentEllerLag(lister, nyPrivat && !!meg);
-    if (!til) return;
-    // Jul er med fra start – bursdagen legges inn i arket som åpnes
+  /** Ny mottaker fra arket: lagres, og mottakerarket åpnes så anledninger og ideer kan legges inn */
+  async function leggTilMottaker(navn: string, fodt: string, privat: boolean): Promise<boolean> {
+    const til = await hentEllerLag(lister, privat && !!meg);
+    if (!til) return false;
+    // Bursdag og jul er med fra start. Fødselsdato gir bursdagen med en gang.
     const m: Punkt = {
       ...nyttPunkt(til.id, 'gaveaar', navn, nesteRekkefolge(punkter.filter((p) => p.listeId === til.id))),
-      anledninger: [nyAnledning('bursdag'), nyAnledning('jul')],
+      fodt: fodt || undefined,
+      anledninger: [nyAnledning('bursdag', fodt ? { dag: fodt.slice(5) } : {}), nyAnledning('jul')],
     };
-    void listeLager.lagrePunkter([m]);
-    setNyMottaker('');
+    if (!(await listeLager.lagrePunkter([m]))) return false;
+    setNyMottaker(false);
     setAapen(m.id);
+    return true;
   }
 
   return (
@@ -215,10 +214,12 @@ export function GaveaarSide({ liste, gaaTil }: { liste: Liste; gaaTil: (r: strin
                 {a !== 'alle' && <Ikon navn={PLAN_IKON[a]} storrelse={15} />}{a === 'alle' ? 'Alle' : PLAN_NAVN[a]}
               </button>
             ))}
-            <button type="button" className="chip" aria-pressed={filter.skjulKjopte} onClick={() => setFilter({ skjulKjopte: !filter.skjulKjopte })}>
-              <Ikon navn={filter.skjulKjopte ? 'sjekk' : 'gave'} storrelse={15} />Skjul kjøpte
-            </button>
           </div>
+          {/* Et valg i tillegg til anledningen – derfor bryter, ikke enda en knapp i rekken */}
+          <label className="rad filter-bryter">
+            <span className="hoved"><span className="navn">Skjul kjøpte</span></span>
+            <input type="checkbox" className="bryter" checked={filter.skjulKjopte} onChange={(e) => setFilter({ skjulKjopte: e.target.checked })} />
+          </label>
           {/* Planen har potter, budsjett per anledning og tidligere år – nås herfra når en anledning er valgt */}
           {filter.anledning !== 'alle' && (
             <button type="button" className="lenkeknapp plan-lenke" onClick={() => gaaTil(`lister/plan/${filter.anledning}/${nestePlanAar(filter.anledning as PlanType)}`)}>
@@ -246,17 +247,10 @@ export function GaveaarSide({ liste, gaaTil }: { liste: Liste; gaaTil: (r: strin
         </section>
 
         <section className="kort">
-          <div className="kort-hode"><div className="tittel"><h2>{bareMine ? 'Dine mottakere' : 'Mottakere'}</h2><span className="dempet liten">{mott.length} personer · trykk for ideer, anledninger og historikk</span></div></div>
-          <form className="hurtig" onSubmit={(e) => void leggTilMottaker(e)}>
-            <input value={nyMottaker} onChange={(e) => setNyMottaker(e.target.value)} placeholder="Ny mottaker, f.eks. Bestemor" aria-label="Ny mottaker" enterKeyHint="done" />
-            {meg && (
-              <select className="hurtig-velg" aria-label="Hvem ser mottakeren" value={nyPrivat ? 'privat' : 'felles'} onChange={(e) => setNyPrivat(e.target.value === 'privat')}>
-                <option value="felles">Felles</option>
-                <option value="privat">Bare meg</option>
-              </select>
-            )}
-            <button type="submit" className="knapp primar ikon" aria-label="Legg til mottaker" disabled={!nyMottaker.trim()}><Ikon navn="pluss" /></button>
-          </form>
+          <div className="kort-hode med-knapp">
+            <div className="tittel"><h2>{bareMine ? 'Dine mottakere' : 'Mottakere'}</h2><span className="dempet liten">{mott.length} personer · trykk for ideer, anledninger og historikk</span></div>
+            <button type="button" className="knapp primar ikon" aria-label="Ny mottaker" title="Ny mottaker" onClick={() => setNyMottaker(true)}><Ikon navn="pluss" /></button>
+          </div>
           {mott.length === 0 && bareMine && <p className="dempet liten">Ingen mottakere er dine ennå.</p>}
           <div className="liste">
             {mott.map(({ liste: l, m }) => {
@@ -294,6 +288,7 @@ export function GaveaarSide({ liste, gaaTil }: { liste: Liste; gaaTil: (r: strin
       </div>
 
       {aapen && <MottakerArk mottakerId={aapen} lukk={() => setAapen(null)} />}
+      {nyMottaker && <NyMottakerArk visSynlighet={!!meg} lagre={leggTilMottaker} lukk={() => setNyMottaker(false)} />}
       {valg && <ValgArk liste={liste} punkter={mine} lukk={() => setValg(false)} endre={() => { setValg(false); setEndrer(true); }} del={() => setValg(false)} gaaTil={gaaTil} />}
       {endrer && <ListeSkjema liste={liste} lukk={() => setEndrer(false)} />}
     </>
@@ -321,12 +316,53 @@ function ForekomstRad({ f, aapne }: { f: Forekomst; aapne: () => void }) {
         <span className="navn"><span className="navn-ikon"><Ikon navn={ANLEDNING_IKON[f.anledning.type]} storrelse={15} /></span>{anledningsNavn(f.anledning)} – {f.mottaker.tekst}</span>
         <span className="info">{f.alder !== undefined && <><Alder alder={f.alder} /> · </>}{info}</span>
       </span>
-      {/* Pris til høyre, status under den – fristmerke bare når det haster, så navnet får plass */}
-      {tilstand === 'ingen' && f.dager <= 21 && <FristMerke dager={f.dager} />}
-      {merke
-        ? <span className="belop">{pris.belop > 0 && kr(pris.belop)}{merke}</span>
-        : pris.belop > 0 ? <span className="belop">{kr(pris.belop)}<small>{pris.budsjett ? 'budsjett' : 'valgt'}</small></span> : null}
+      {/* Pris til høyre, status eller frist under den (frist bare når det haster) – så navnet får plass */}
+      {(() => {
+        const under = merke ?? (tilstand === 'ingen' && f.dager <= 21 ? <FristMerke dager={f.dager} /> : null);
+        if (under) return <span className="belop">{pris.belop > 0 && kr(pris.belop)}{under}</span>;
+        return pris.belop > 0 ? <span className="belop">{kr(pris.belop)}<small>{pris.budsjett ? 'budsjett' : 'valgt'}</small></span> : null;
+      })()}
     </button>
+  );
+}
+
+// ---------------------------------------------------------------- Ny mottaker
+
+function NyMottakerArk({ visSynlighet, lagre, lukk }: {
+  visSynlighet: boolean; lagre: (navn: string, fodt: string, privat: boolean) => Promise<boolean>; lukk: () => void;
+}) {
+  const [navn, setNavn] = useState('');
+  const [fodt, setFodt] = useState('');
+  const [privat, setPrivat] = useState(false);
+  const [lagrer, setLagrer] = useState(false);
+  async function send(e: FormEvent) {
+    e.preventDefault();
+    if (!navn.trim() || lagrer) return;
+    setLagrer(true);
+    if (!(await lagre(navn.trim(), fodt, privat))) setLagrer(false);
+  }
+  return (
+    <Ark tittel="Ny mottaker" lukk={lukk}>
+      <form className="skjema" onSubmit={(e) => void send(e)}>
+        <div className="felt-rad">
+          <Felt etikett="Navn"><input value={navn} onChange={(e) => setNavn(e.target.value)} placeholder="F.eks. Bestemor" required autoFocus /></Felt>
+          <Felt etikett="Født (valgfritt)"><input type="date" value={fodt} max={iDag()} onChange={(e) => setFodt(e.target.value)} /></Felt>
+        </div>
+        {visSynlighet && (
+          <Felt etikett="Hvem ser" hjelp={privat ? 'Bare du ser personen og gavene.' : 'Dere ser begge personen og gavene.'}>
+            <select value={privat ? 'privat' : 'felles'} onChange={(e) => setPrivat(e.target.value === 'privat')}>
+              <option value="felles">Felles</option>
+              <option value="privat">Bare meg</option>
+            </select>
+          </Felt>
+        )}
+        <p className="dempet liten">Bursdag og jul er med fra start. Ideer, budsjett og andre anledninger legger du inn etterpå.</p>
+        <div className="knapperad slutt">
+          <button type="button" className="knapp" onClick={lukk}>Avbryt</button>
+          <button type="submit" className="knapp primar" disabled={!navn.trim() || lagrer}>{lagrer ? 'Legger til …' : 'Legg til'}</button>
+        </div>
+      </form>
+    </Ark>
   );
 }
 
