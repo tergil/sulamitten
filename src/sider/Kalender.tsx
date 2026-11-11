@@ -1,7 +1,7 @@
 // Felles kalender: uke- og månedsvisning, avtaler med gjentakelser og unntak («bare denne dagen»),
 // bursdager fra gaveårene og frister fra listene. Abonnement for telefonens kalender (Edge Function «kalender»).
 // Logikk: logikk/kalender.ts. Data: data/kalender.ts (tabellen «hendelse»).
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent, type TouchEvent } from 'react';
 import type { Gjentak, KalenderKategoriDef } from '../data/modell';
 import { nyId } from '../data/modell';
 import { endreKalender, lukkKalenderFeil, useKalender } from '../data/kalender';
@@ -133,6 +133,34 @@ function DagListe({ dato, poster, navn, aapne, nyAvtale, merkedager }: {
 
 type Visning = 'uke' | 'maaned';
 
+/**
+ * Sveip vannrett for å bla: mot venstre = neste uke/måned, mot høyre = forrige. Bare berøring.
+ * Loddrett rulling går som vanlig (touch-action: pan-y i CSS). Starter man helt ute ved kanten,
+ * er det telefonens egen «tilbake»-bevegelse – den lar vi være.
+ */
+function useSveipBla(flytt: (retning: -1 | 1) => void) {
+  const start = useRef<{ x: number; y: number; t: number } | null>(null);
+  return {
+    onTouchStart: (e: TouchEvent) => {
+      const t = e.touches[0];
+      const kant = 24;
+      start.current = e.touches.length === 1 && t.clientX > kant && t.clientX < window.innerWidth - kant
+        ? { x: t.clientX, y: t.clientY, t: performance.now() } : null;
+    },
+    onTouchEnd: (e: TouchEvent) => {
+      const s = start.current;
+      start.current = null;
+      if (!s) return;
+      const t = e.changedTouches[0];
+      const dx = t.clientX - s.x;
+      const dy = t.clientY - s.y;
+      // Tydelig vannrett, langt nok og ikke en langsom dra-bevegelse
+      if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5 && performance.now() - s.t < 800) flytt(dx < 0 ? 1 : -1);
+    },
+    onTouchCancel: () => { start.current = null; },
+  };
+}
+
 export function Kalender({ gaaTil }: { gaaTil: (r: string) => void }) {
   const { hendelser, lastet, feil } = useKalender();
   const { lister, punkter } = useLister();
@@ -140,7 +168,9 @@ export function Kalender({ gaaTil }: { gaaTil: (r: string) => void }) {
   const kategorier = useKategorier();
   const idag = iDag();
   const [visning, setVisningRaa] = useState<Visning>(() => (lesValg('familie.kalender.visning') as Visning) ?? (window.innerWidth < 640 ? 'uke' : 'maaned'));
-  const setVisning = (v: Visning) => { setVisningRaa(v); lagreValg('familie.kalender.visning', v); };
+  // Retningen siste bytte gikk – gir en kort glide inn fra riktig side
+  const [glid, setGlid] = useState<-1 | 1 | 0>(0);
+  const setVisning = (v: Visning) => { setGlid(0); setVisningRaa(v); lagreValg('familie.kalender.visning', v); };
   const [anker, setAnker] = useState(idag);
   const [valgt, setValgt] = useState(idag);
   const [ark, setArk] = useState<{ post?: KalenderPost; dato: string } | null>(null);
@@ -158,6 +188,7 @@ export function Kalender({ gaaTil }: { gaaTil: (r: string) => void }) {
   const merkedager = useMerkedager(fra, til, skjulMerkedager);
 
   const flytt = (retning: -1 | 1) => {
+    setGlid(retning);
     if (visning === 'uke') setAnker(leggTilDager(anker, 7 * retning));
     else {
       const ny = `${leggTilDager(forsteIMnd, retning === 1 ? 32 : -1).slice(0, 7)}-01`;
@@ -165,10 +196,12 @@ export function Kalender({ gaaTil }: { gaaTil: (r: string) => void }) {
       setValgt(ny.slice(0, 7) === idag.slice(0, 7) ? idag : ny);
     }
   };
-  const tilIdag = () => { setAnker(idag); setValgt(idag); };
+  const tilIdag = () => { setGlid(idag > anker ? 1 : -1); setAnker(idag); setValgt(idag); };
   const visesIdag = idag >= fra && idag <= til && (visning === 'uke' || idag.slice(0, 7) === anker.slice(0, 7));
   const aapne = (p: KalenderPost) => (p.kilde === 'avtale' ? setArk({ post: p, dato: p.dato }) : p.url && gaaTil(p.url.replace(/^#\//, '')));
   const nyDato = visning === 'maaned' ? valgt : visesIdag ? idag : fra;
+  const sveip = useSveipBla(flytt);
+  const glidKlasse = glid === 1 ? ' glir-fra-hoyre' : glid === -1 ? ' glir-fra-venstre' : '';
 
   if (!lastet) return <div className="laster"><div className="spinner" aria-label="Laster" /></div>;
 
@@ -182,11 +215,14 @@ export function Kalender({ gaaTil }: { gaaTil: (r: string) => void }) {
         </div>
       )}
 
-      <div className="verktoylinje">
-        <div className="maanedsvelger" role="group" aria-label="Periode">
-          <button className="knapp ikon flat liten" onClick={() => flytt(-1)} aria-label={visning === 'uke' ? 'Forrige uke' : 'Forrige måned'}><Ikon navn="pilvenstre" storrelse={18} /></button>
-          <span className="tall">{visning === 'uke' ? `Uke ${ukenummer(fra)} · ${kortDag(fra)}–${kortDag(til)}` : maanedNavn(forsteIMnd)}</span>
-          <button className="knapp ikon flat liten" onClick={() => flytt(1)} aria-label={visning === 'uke' ? 'Neste uke' : 'Neste måned'}><Ikon navn="pilhoyre" storrelse={18} /></button>
+      {/* Henger fast under toppfeltet når man ruller ned i ukas avtaler */}
+      <div className="verktoylinje kal-verktoy">
+        <div className="kal-periode">
+          <div className="maanedsvelger" role="group" aria-label="Periode">
+            <button className="knapp ikon flat liten" onClick={() => flytt(-1)} aria-label={visning === 'uke' ? 'Forrige uke' : 'Forrige måned'}><Ikon navn="pilvenstre" storrelse={18} /></button>
+            <span className="tall">{visning === 'uke' ? `Uke ${ukenummer(fra)} · ${kortDag(fra)}–${kortDag(til)}` : maanedNavn(forsteIMnd)}</span>
+            <button className="knapp ikon flat liten" onClick={() => flytt(1)} aria-label={visning === 'uke' ? 'Neste uke' : 'Neste måned'}><Ikon navn="pilhoyre" storrelse={18} /></button>
+          </div>
         </div>
         <div className="knapperad" style={{ alignItems: 'center' }}>
           {!visesIdag && <button className="knapp liten" onClick={tilIdag}>I dag</button>}
@@ -196,12 +232,12 @@ export function Kalender({ gaaTil }: { gaaTil: (r: string) => void }) {
       </div>
 
       {visning === 'uke' ? (
-        <section className="kort kal-uke">
+        <section className={`kort kal-uke kal-sveip${glidKlasse}`} key={fra} {...sveip}>
           {dager.map((d) => <DagListe key={d} dato={d} poster={paa(d)} navn={navn} aapne={aapne} nyAvtale={() => setArk({ dato: d })} merkedager={merkedager.get(d)} />)}
         </section>
       ) : (
         <div className="rutenett to-en">
-          <section className="kort">
+          <section className={`kort kal-sveip${glidKlasse}`} key={forsteIMnd} {...sveip}>
             <div className={`kal-maaned${visUkenr ? ' med-ukenr' : ''}`} role="grid" aria-label={maanedNavn(forsteIMnd)}>
               {visUkenr && <div className="kal-ukedag" role="columnheader" aria-label="Uke">U</div>}
               {UKEDAGER_KORT.map((u) => <div key={u} className="kal-ukedag" role="columnheader">{u}</div>)}

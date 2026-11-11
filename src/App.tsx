@@ -219,6 +219,17 @@ function Skall() {
     return () => window.removeEventListener('scroll', f);
   }, []);
 
+  // Høyden på toppfeltet (varierer med notch og tekststørrelse) – så andre ting kan henge fast rett under det
+  useEffect(() => {
+    const topp = document.querySelector('header.topp');
+    if (!topp || typeof ResizeObserver === 'undefined') return;
+    const sett = () => document.documentElement.style.setProperty('--topp-hoyde', `${topp.getBoundingClientRect().height}px`);
+    const ro = new ResizeObserver(sett);
+    ro.observe(topp);
+    sett();
+    return () => ro.disconnect();
+  }, []);
+
   // Gamle lenker til den tidligere Privat-fanen
   useEffect(() => {
     if (side !== 'privat') return;

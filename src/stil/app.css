@@ -803,6 +803,33 @@ body.drar-punkt [data-dra-id] { transition: transform .15s ease; }
 /* ---------------------------------------------------------------- Kalender */
 
 .kal-uke { padding-top: var(--a2); padding-bottom: var(--a2); }
+/* Uke/måned-linjen henger fast rett under toppfeltet (høyden måles i App.tsx).
+   Bred skjerm: alt står på én rad, så hele verktøylinjen henger fast.
+   Smal skjerm: raden brytes – da henger bare perioden fast, og Uke/Måned ruller bort under den. */
+.kal-verktoy, .kal-periode { --klebrig-bg: color-mix(in srgb, var(--bg) 88%, transparent); }
+.kal-verktoy {
+  position: sticky; top: var(--topp-hoyde, 0px); z-index: 15;
+  margin-inline: calc(-1 * var(--a4)); padding: var(--a2) var(--a4);
+  background: var(--klebrig-bg); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+}
+@media (min-width: 900px) { .kal-verktoy { margin-inline: calc(-1 * var(--a6)); padding-inline: var(--a6); } }
+@media (max-width: 640px) {
+  .kal-verktoy { display: contents; }
+  .kal-periode {
+    position: sticky; top: var(--topp-hoyde, 0px); z-index: 15;
+    margin-inline: calc(-1 * var(--a4)); padding: var(--a2) var(--a4);
+    background: var(--klebrig-bg); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  }
+  /* Innholdet har stor luft mellom blokkene – Uke/Måned skal ligge tett under perioden */
+  .kal-verktoy > .knapperad { margin-top: calc(var(--a1) - var(--a5)); }
+}
+/* Sveip for å bla: nettleseren tar bare loddrett rulling, vannrett er vårt. Ny periode glir kort inn fra riktig side. */
+.kal-sveip { touch-action: pan-y; }
+.glir-fra-hoyre { animation: glir-fra-hoyre .22s ease-out; }
+.glir-fra-venstre { animation: glir-fra-venstre .22s ease-out; }
+@keyframes glir-fra-hoyre { from { transform: translateX(24px); opacity: .4; } to { transform: none; opacity: 1; } }
+@keyframes glir-fra-venstre { from { transform: translateX(-24px); opacity: .4; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .glir-fra-hoyre, .glir-fra-venstre { animation: none; } }
 .kal-dag + .kal-dag { border-top: 1px solid var(--linje-sterk); }
 .kal-dag { padding: var(--a2) 0; }
 /* Dager som har vært: merket med tekst, bare fargestreken tones ned (teksten beholder full kontrast) */
