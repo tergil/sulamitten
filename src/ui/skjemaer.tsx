@@ -313,7 +313,7 @@ export function BankSkjema({ bank, lagre, slett, lukk }: { bank?: Bank; lagre: (
   const [b, setB] = useState<Bank>(bank ?? { id: nyId(), navn: '' });
   return (
     <Skjema tittel={bank ? 'Endre bank' : 'Ny bank'} lukk={lukk} lagre={() => lagre(b)}>
-      <Felt etikett="Navn"><input value={b.navn} onChange={(e) => setB({ ...b, navn: e.target.value })} required autoFocus /></Felt>
+      <Felt etikett="Navn"><input value={b.navn} onChange={(e) => setB({ ...b, navn: e.target.value })} required autoFocus={!bank} /></Felt>
       <Knapper slett={slett} bekreft={false} hva={`banken «${b.navn || 'uten navn'}»`} slettTekst="Slett banken" lukk={lukk} kanLagre={!!b.navn} />
     </Skjema>
   );

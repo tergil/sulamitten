@@ -254,6 +254,8 @@ export interface Punkt {
   anledning?: string;
   /** Gaveår, felles: person-id til den som betaler. Tom = felles. */
   betaler?: Id;
+  /** Gaveår, felles mottaker: person-id til den som kjøper gavene. Teller i den personens pott. Tom = felles. */
+  ansvarlig?: Id;
   /** Vises som nedtelling på Oversikt (krever dato) */
   nedtelling?: boolean;
 }

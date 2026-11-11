@@ -139,7 +139,7 @@ export function UtgiftSkjema({ utgift, forslag, privatStart, lukk }: { utgift?: 
 
         <label className="stort-belop">
           <span className="skjult">Beløp</span>
-          <input inputMode="decimal" value={belopTekst} placeholder="0" autoFocus
+          <input inputMode="decimal" value={belopTekst} placeholder="0" autoFocus={!utgift}
             onChange={(e) => { setBelopTekst(e.target.value); setDubletter(null); }} />
           <span aria-hidden="true">kr</span>
         </label>

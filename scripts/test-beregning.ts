@@ -2,7 +2,10 @@
 import { avrundOpp, foreslaOverforinger, kopierRevisjon, oppsummerFelles, oppsummerPrivat, privateOverforinger, sammenlign, sum, tilMnd, aktivRevisjon } from '../src/logikk/beregning';
 import { fellesFlyt, privatFlyt } from '../src/logikk/flyt';
 import { demoFelles, demoLister, demoPrivat } from '../src/data/demo';
-import { alder, andreSondag, anledningsDato, anledningsPlan, flyttGavelister, forekomster, gaveVarsler, medAutoAnledning, personbudsjett, potter, rundDag, tilPlanType } from '../src/logikk/gaveaar';
+import {
+  alder, andreSondag, anledningsDato, anledningsPlan, budsjettPerPott, flyttGavelister, flyttMottaker, forekomster, gaveVarsler, medAutoAnledning, mineForekomster,
+  mittGaveaar, personbudsjett, planlagtPris, potter, rundDag, sorterAnledninger, tilPlanType,
+} from '../src/logikk/gaveaar';
 import { andelGaatt, avstem, dagerIMaaned, flyttMaaned, kategoriStatus, kontoPlan, kontoerFor, muligeDubletter, revisjonForMaaned } from '../src/logikk/oppfolging';
 import {
   MALER, adventssondager, delingsTekst, erFerdig, erGjort, flyttEtSteg, fremdrift, gavehistorikk, nyRekkefolge, punkterForDeling, hageIMaaned, huskelapp, kalenderAar, kalenderLuker, kopierPunkter, lagTre, listeSum,
@@ -294,6 +297,30 @@ const strikkebok = ga.punkter.find((p) => p.tekst === 'Strikkebok')!;
 sjekk('kjøpt idé får neste anledning', medAutoAnledning({ ...strikkebok, status: 'kjopt' }, mammaGa, '2026-10-11').anledning, 'a-m-b:2026');
 sjekk('idé uten kjøp forblir i idébanken', medAutoAnledning(strikkebok, mammaGa, '2026-10-11').anledning, undefined);
 sjekk('valgt anledning endres ikke', medAutoAnledning({ ...strikkebok, status: 'kjopt', anledning: 'a-m-j:2026' }, mammaGa, '2026-10-11').anledning, 'a-m-j:2026');
+
+// --- Gaveår: ett gaveår per person, ansvarlig og «Mine kjøp»
+const ettGa = mittGaveaar(ga.lister);
+sjekk('mitt gaveår: felles og privat vises som ett, felles er hoved', [ettGa.alle.length, ettGa.felles?.navn, ettGa.privat?.navn, ettGa.hoved?.navn], [2, 'Gaveår', 'Mitt gaveår', 'Gaveår']);
+// Bestemor (felles) har Kari som ansvarlig, Ola ligger i Karis private gaveår
+sjekk('budsjett per pott: ansvarlig og private teller på Kari', Object.fromEntries(budsjettPerPott(jul, 'kari')), { kari: 800 + 1500, felles: 400 + 600 + 600 });
+sjekk('mine kjøp for Kari: egne + ansvarlig', [...new Set(mineForekomster(tidslinje, 'kari').map((f) => f.mottaker.tekst))].sort(), ['Bestemor', 'Ola']);
+// Ola ser ikke Karis private gaveår (RLS), så det tas bort her
+sjekk('mine kjøp for Ola: ingenting', mineForekomster(tidslinje.filter((f) => !f.liste.privat), 'ola').length, 0);
+sjekk('planlagt pris: gaven, ellers budsjettet', [
+  planlagtPris(tidslinje.find((f) => f.mottaker.tekst === 'Bestemor' && f.anledning.type === 'jul')!),
+  planlagtPris(tidslinje.find((f) => f.mottaker.tekst === 'Mamma' && f.anledning.type === 'bursdag')!),
+], [{ belop: 700, budsjett: false }, { belop: 600, budsjett: true }]);
+const bestemor = ga.punkter.find((p) => p.tekst === 'Bestemor')!;
+const tilPrivat = flyttMottaker(bestemor, ga.punkter, ettGa.privat!);
+sjekk('flytt til «bare meg»: gaver følger med, ansvarlig og betaler fjernes', [
+  tilPrivat.punkter.map((p) => p.tekst), tilPrivat.punkter.every((p) => p.listeId === ettGa.privat!.id), tilPrivat.punkter.some((p) => p.ansvarlig || p.betaler),
+], [['Bestemor', 'Pledd', 'Puslespill'], true, false]);
+// Ola har bursdag 20. feb. og jul: 11. november kommer jul først
+const olaGa = ga.punkter.find((p) => p.tekst === 'Ola')!;
+sjekk('anledninger sortert etter neste dato', sorterAnledninger(olaGa.anledninger!, '2026-11-11').map((a) => a.type), ['jul', 'bursdag']);
+sjekk('anledning uten dato havner sist', sorterAnledninger([{ id: 'x', type: 'bursdag' }, { id: 'j', type: 'jul' }], '2026-11-11').map((a) => a.id), ['j', 'x']);
+const lommebok = ga.punkter.find((p) => p.tekst === 'Ny lommebok')!;
+sjekk('sveipet kjøpt i november: julegave før bursdag i februar', medAutoAnledning({ ...lommebok, status: 'kjopt' }, olaGa, '2026-11-11').anledning, 'a-o-j:2026');
 
 // --- Varsler
 sjekk('varseltrinn: 18 dager igjen, [21, 0]', varseltrinn(18, [21, 0]), { trinn: 21, alle: [21] });

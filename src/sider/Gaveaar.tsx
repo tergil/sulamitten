@@ -9,12 +9,14 @@ import { useTilstand } from '../data/tilstand';
 import { iDag, sum } from '../logikk/beregning';
 import { erBrukt, gavehistorikk, medStatus, nesteRekkefolge, nesteStatus, nyttPunkt, tidligereGaver } from '../logikk/lister';
 import {
-  ANLEDNING_IKON, ANLEDNING_NAVN, PLAN_IKON, PLAN_NAVN, PLAN_TYPER, alder, anledningsDato, anledningsNavn, anledningsPlan, flyttGavelister, forekomster, rundDag, tilPlanType,
-  gaveaar, gaverTil, medAutoAnledning, mottakere, nesteDato, nokkelTekst, nyAnledning, personbudsjett, planNokkel, planTittel, potter,
+  ANLEDNING_IKON, ANLEDNING_NAVN, PLAN_IKON, PLAN_NAVN, PLAN_TYPER, alder, anledningsDato, anledningsNavn, anledningsPlan, budsjettPerPott, erMinMottaker, flyttGavelister,
+  flyttMottaker, forekomster, gaveaar, gaverTil, medAutoAnledning, mineForekomster, mittGaveaar, mottakere, nesteDato, nokkelTekst, nyAnledning, planNokkel,
+  planTittel, planlagtPris, potter, rundDag, sorterAnledninger, tilPlanType,
   type Forekomst, type PlanDel, type PlanType,
 } from '../logikk/gaveaar';
 import { Ark, BelopFelt, Felt, Ikon, IkonBoble, MAANEDER_KORT, Segment, Tom, kortDato, kr, maanedTekst, useBekreft } from '../ui/felles';
 import { UtgiftSkjema, type UtgiftForslag } from '../ui/UtgiftSkjema';
+import { Sveip } from '../ui/Sveip';
 import { BudsjettKort, FeilBanner, FristMerke, ListeSkjema, PunktArk, SeksjonHode, StatusKnapp, ValgArk } from './Lister';
 
 const iAar = () => Number(iDag().slice(0, 4));
@@ -96,28 +98,69 @@ function FlyttGavelister() {
 
 // ---------------------------------------------------------------- Ett gaveår (årshjulet)
 
+/** Henter gaveåret (felles eller privat) – lager det hvis det ikke finnes ennå */
+async function hentEllerLag(lister: Liste[], privat: boolean): Promise<Liste | null> {
+  const ga = mittGaveaar(lister);
+  const finnes = privat ? ga.privat : ga.felles;
+  if (finnes) return finnes;
+  const ny = nyttGaveaar(privat, lister.reduce((m, l) => Math.max(m, l.rekkefolge), 0) + 1);
+  return (await listeLager.opprett(ny, [])) ? ny : null;
+}
+
+/** «Mine | Alle» huskes per enhet */
+const VISNING = 'familie.gaveaar.visning';
+type Visning = 'mine' | 'alle';
+function lesVisning(): Visning {
+  try { return localStorage.getItem(VISNING) === 'mine' ? 'mine' : 'alle'; } catch { return 'alle'; }
+}
+
+/** Navnet på en person fra felles-dokumentet – «deg» for den innloggede */
+function useNavnPaa() {
+  const { felles, meg } = useTilstand();
+  return (id: string | undefined) => (!id ? 'Felles' : id === meg?.id ? 'deg' : felles?.personer.find((p) => p.id === id)?.navn ?? 'Ukjent');
+}
+
 export function GaveaarSide({ liste, gaaTil }: { liste: Liste; gaaTil: (r: string) => void }) {
-  const { punkter, feil } = useLister();
+  const { lister, punkter, feil } = useLister();
+  const { meg } = useTilstand();
+  const navnPaa = useNavnPaa();
   const [aapen, setAapen] = useState<string | null>(null);
   const [valg, setValg] = useState(false);
   const [endrer, setEndrer] = useState(false);
   const [nyMottaker, setNyMottaker] = useState('');
+  const [nyPrivat, setNyPrivat] = useState(false);
+  const [visning, setVisningRaa] = useState<Visning>(lesVisning);
+  const setVisning = (v: Visning) => { setVisningRaa(v); try { localStorage.setItem(VISNING, v); } catch { /* ignorer */ } };
   const idag = iDag();
+  // Felles og ditt private gaveår vises som ett
+  const ga = mittGaveaar(lister);
+  const alleLister = ga.alle.length ? ga.alle : [liste];
   const mine = punkter.filter((p) => p.listeId === liste.id);
-  const mott = mottakere(liste.id, punkter);
-  const tidslinje = forekomster([liste], punkter, idag);
+  const alleMott = alleLister.flatMap((l) => mottakere(l.id, punkter).map((m) => ({ liste: l, m })))
+    .sort((a, b) => a.m.tekst.localeCompare(b.m.tekst, 'nb'));
+  const bareMine = visning === 'mine';
+  const mott = bareMine ? alleMott.filter(({ liste: l, m }) => erMinMottaker(l, m, meg?.id)) : alleMott;
+  const utenAnsvarlig = alleMott.filter(({ liste: l, m }) => !l.privat && !m.ansvarlig).length;
+  const tidslinjeAlle = forekomster(alleLister, punkter, idag);
+  const tidslinje = bareMine ? mineForekomster(tidslinjeAlle, meg?.id) : tidslinjeAlle;
+  const totalt = sum(tidslinje, (f) => planlagtPris(f).belop);
   const planer = PLAN_TYPER.map((type) => ({ type, aar: nestePlanAar(type) }));
 
   // Tidslinjen gruppert per måned
   const perMaaned = new Map<string, Forekomst[]>();
   for (const f of tidslinje) perMaaned.set(f.dato.slice(0, 7), [...(perMaaned.get(f.dato.slice(0, 7)) ?? []), f]);
 
-  function leggTilMottaker(e: FormEvent) {
+  async function leggTilMottaker(e: FormEvent) {
     e.preventDefault();
     const navn = nyMottaker.trim();
     if (!navn) return;
+    const til = await hentEllerLag(lister, nyPrivat && !!meg);
+    if (!til) return;
     // Jul er med fra start – bursdagen legges inn i arket som åpnes
-    const m: Punkt = { ...nyttPunkt(liste.id, 'gaveaar', navn, nesteRekkefolge(mine)), anledninger: [nyAnledning('bursdag'), nyAnledning('jul')] };
+    const m: Punkt = {
+      ...nyttPunkt(til.id, 'gaveaar', navn, nesteRekkefolge(punkter.filter((p) => p.listeId === til.id))),
+      anledninger: [nyAnledning('bursdag'), nyAnledning('jul')],
+    };
     void listeLager.lagrePunkter([m]);
     setNyMottaker('');
     setAapen(m.id);
@@ -130,12 +173,11 @@ export function GaveaarSide({ liste, gaaTil }: { liste: Liste; gaaTil: (r: strin
         <button className="knapp flat liten" onClick={() => gaaTil('lister')}><Ikon navn="pilvenstre" storrelse={18} />Alle lister</button>
         <button className="knapp liten" onClick={() => setValg(true)}><Ikon navn="mer" storrelse={16} />Valg</button>
       </div>
-      <div className="liste-meta">
-        <span className="merkelapp"><Ikon navn="kake" storrelse={12} />Gaveår</span>
-        {liste.privat
-          ? <span className="merkelapp aksent"><Ikon navn="privat" storrelse={12} />Bare du ser dette gaveåret</span>
-          : <span className="merkelapp"><Ikon navn="person" storrelse={12} />Felles</span>}
-      </div>
+
+      {meg && (
+        <Segment etikett="Vis" full verdi={visning} endre={setVisning}
+          valg={[{ verdi: 'mine', tekst: 'Mine kjøp', ikon: 'person' }, { verdi: 'alle', tekst: 'Alle', ikon: 'gave' }]} />
+      )}
 
       <FlyttGavelister />
 
@@ -151,8 +193,16 @@ export function GaveaarSide({ liste, gaaTil }: { liste: Liste; gaaTil: (r: strin
 
       <div className="rutenett to">
         <section className="kort">
-          <div className="kort-hode"><div className="tittel"><h2>De neste 12 månedene</h2><span className="dempet liten">Varsles på huskelappen 3 uker før hvis ingenting er kjøpt</span></div></div>
-          {tidslinje.length === 0 && <Tom ikon="kalender" tittel="Årshjulet er tomt" tekst="Legg til mottakere og bursdager, så husker Sulamitten dem for dere." />}
+          <div className="kort-hode">
+            <div className="tittel">
+              <h2>{bareMine ? 'Det du skal kjøpe' : 'De neste 12 månedene'}</h2>
+              <span className="dempet liten">{bareMine ? 'Dine egne, og felles der du er ansvarlig' : 'Varsles på huskelappen 3 uker før hvis ingenting er kjøpt'}</span>
+              {totalt > 0 && <span className="liten">Til sammen (gave eller budsjett) <strong className="tall">{kr(totalt)}</strong></span>}
+            </div>
+          </div>
+          {tidslinje.length === 0 && (bareMine
+            ? <Tom ikon="gave" tittel="Ingenting på deg" tekst="Sett deg som ansvarlig på en felles mottaker, eller legg til dine egne. Så havner de her." />
+            : <Tom ikon="kalender" tittel="Årshjulet er tomt" tekst="Legg til mottakere og bursdager, så husker Sulamitten dem for dere." />)}
           {[...perMaaned].map(([maaned, liste_]) => (
             <div className="seksjon" key={maaned}>
               <SeksjonHode tittel={maanedTekst(maaned)} />
@@ -161,16 +211,26 @@ export function GaveaarSide({ liste, gaaTil }: { liste: Liste; gaaTil: (r: strin
               </div>
             </div>
           ))}
+          {bareMine && utenAnsvarlig > 0 && (
+            <p className="dempet liten">{utenAnsvarlig} felles {utenAnsvarlig === 1 ? 'mottaker har' : 'mottakere har'} ingen ansvarlig og vises bare under «Alle».</p>
+          )}
         </section>
 
         <section className="kort">
-          <div className="kort-hode"><div className="tittel"><h2>Mottakere</h2><span className="dempet liten">{mott.length} personer · trykk for anledninger, ideer og historikk</span></div></div>
-          <form className="hurtig" onSubmit={leggTilMottaker}>
+          <div className="kort-hode"><div className="tittel"><h2>{bareMine ? 'Dine mottakere' : 'Mottakere'}</h2><span className="dempet liten">{mott.length} personer · trykk for ideer, anledninger og historikk</span></div></div>
+          <form className="hurtig" onSubmit={(e) => void leggTilMottaker(e)}>
             <input value={nyMottaker} onChange={(e) => setNyMottaker(e.target.value)} placeholder="Ny mottaker, f.eks. Bestemor" aria-label="Ny mottaker" enterKeyHint="done" />
+            {meg && (
+              <select className="hurtig-velg" aria-label="Hvem ser mottakeren" value={nyPrivat ? 'privat' : 'felles'} onChange={(e) => setNyPrivat(e.target.value === 'privat')}>
+                <option value="felles">Felles</option>
+                <option value="privat">Bare meg</option>
+              </select>
+            )}
             <button type="submit" className="knapp primar ikon" aria-label="Legg til mottaker" disabled={!nyMottaker.trim()}><Ikon navn="pluss" /></button>
           </form>
+          {mott.length === 0 && bareMine && <p className="dempet liten">Ingen mottakere er dine ennå.</p>}
           <div className="liste">
-            {mott.map((m) => {
+            {mott.map(({ liste: l, m }) => {
               const ideer = gaverTil(m.id, punkter).filter((g) => !g.anledning && !erBrukt('gaveaar', g.status)).length;
               const mangler = (m.anledninger ?? []).filter((a) => (a.type === 'bursdag' || a.type === 'egen') && !a.dag);
               const aarsbudsjett = sum(m.anledninger ?? [], (a) => a.budsjett ?? 0);
@@ -189,6 +249,11 @@ export function GaveaarSide({ liste, gaaTil }: { liste: Liste; gaaTil: (r: strin
                       {ideer ? ` · ${ideer} ${ideer === 1 ? 'idé' : 'ideer'}` : ''}
                     </span>
                     {mangler.length > 0 && <span className="info varsel-tekst"><Ikon navn="advarsel" storrelse={11} /> {anledningsNavn(mangler[0])} mangler dato</span>}
+                    <span className="info">
+                      {l.privat
+                        ? <span className="merkelapp"><Ikon navn="privat" storrelse={12} />Bare meg</span>
+                        : m.ansvarlig ? <>Kjøper: {navnPaa(m.ansvarlig)}</> : 'Felles – ingen ansvarlig'}
+                    </span>
                   </span>
                   {aarsbudsjett > 0 && <span className="belop">{kr(aarsbudsjett)}<small>i året</small></span>}
                   <Ikon navn="pilhoyre" storrelse={16} />
@@ -199,7 +264,7 @@ export function GaveaarSide({ liste, gaaTil }: { liste: Liste; gaaTil: (r: strin
         </section>
       </div>
 
-      {aapen && <MottakerArk liste={liste} mottakerId={aapen} lukk={() => setAapen(null)} />}
+      {aapen && <MottakerArk mottakerId={aapen} lukk={() => setAapen(null)} />}
       {valg && <ValgArk liste={liste} punkter={mine} lukk={() => setValg(false)} endre={() => { setValg(false); setEndrer(true); }} del={() => setValg(false)} gaaTil={gaaTil} />}
       {endrer && <ListeSkjema liste={liste} lukk={() => setEndrer(false)} />}
     </>
@@ -209,10 +274,8 @@ export function GaveaarSide({ liste, gaaTil }: { liste: Liste; gaaTil: (r: strin
 function ForekomstRad({ f, aapne }: { f: Forekomst; aapne: () => void }) {
   const kjopt = f.gaver.filter((g) => erBrukt('gaveaar', g.status));
   const gitt = f.gaver.length > 0 && f.gaver.every((g) => g.status === 'gitt');
-  const info = [
-    f.gaver.length ? f.gaver.map((g) => `${g.tekst}${g.belop ? ` ${kr(g.belop)}` : ''}`).join(', ') : f.ideer ? `${f.ideer} ${f.ideer === 1 ? 'idé' : 'ideer'} i idébanken` : 'Ingen ideer ennå',
-    f.anledning.budsjett ? `budsjett ${kr(f.anledning.budsjett)}` : null,
-  ].filter(Boolean).join(' · ');
+  const info = f.gaver.length ? f.gaver.map((g) => g.tekst).join(', ') : f.ideer ? `${f.ideer} ${f.ideer === 1 ? 'idé' : 'ideer'} i idébanken` : 'Ingen ideer ennå';
+  const pris = planlagtPris(f);
   return (
     <button className="rad" onClick={aapne}>
       <span className="dato-blokk" aria-hidden="true"><span className="dag">{Number(f.dato.slice(8))}</span><span className="mnd">{MAANEDER_KORT[Number(f.dato.slice(5, 7)) - 1]}</span></span>
@@ -220,30 +283,53 @@ function ForekomstRad({ f, aapne }: { f: Forekomst; aapne: () => void }) {
         <span className="navn"><span className="navn-ikon"><Ikon navn={ANLEDNING_IKON[f.anledning.type]} storrelse={15} /></span>{anledningsNavn(f.anledning)} – {f.mottaker.tekst}</span>
         <span className="info">{f.alder !== undefined && <><Alder alder={f.alder} /> · </>}{info}</span>
       </span>
-      {gitt ? <span className="merkelapp bra"><Ikon navn="sjekk" storrelse={12} />Gitt</span>
-        : kjopt.length ? <span className="merkelapp bra"><Ikon navn="sjekk" storrelse={12} />Kjøpt</span>
-        : f.dager <= 21 ? <FristMerke dager={f.dager} />
-        : null}
+      {/* Pris til høyre, status under den – merkelapp bare når det haster, så navnet får plass */}
+      {!kjopt.length && f.dager <= 21 && <FristMerke dager={f.dager} />}
+      {pris.belop > 0
+        ? <span className="belop">{kr(pris.belop)}<small>{gitt || kjopt.length ? <><Ikon navn="sjekk" storrelse={11} /> {gitt ? 'gitt' : 'kjøpt'}</> : pris.budsjett ? 'budsjett' : 'valgt'}</small></span>
+        : gitt || kjopt.length ? <span className="merkelapp bra"><Ikon navn="sjekk" storrelse={12} />{gitt ? 'Gitt' : 'Kjøpt'}</span> : null}
     </button>
   );
 }
 
 // ---------------------------------------------------------------- Én mottaker: anledninger, idébank, planlagt og historikk
 
-function MottakerArk({ liste, mottakerId, lukk }: { liste: Liste; mottakerId: string; lukk: () => void }) {
+function MottakerArk({ mottakerId, lukk }: { mottakerId: string; lukk: () => void }) {
   const { lister, punkter } = useLister();
-  const { visToast, meg } = useTilstand();
+  const { visToast, meg, felles } = useTilstand();
   const [redigerer, setRedigerer] = useState<Punkt | null>(null);
   const [nyIde, setNyIde] = useState('');
   const [utgift, setUtgift] = useState<UtgiftForslag | null>(null);
   const [nyEgen, setNyEgen] = useState(false);
+  const [flytter, setFlytter] = useState(false);
   const mottaker = punkter.find((p) => p.id === mottakerId);
+  const liste = lister.find((l) => l.id === mottaker?.listeId);
   const [navn, setNavn] = useState(mottaker?.tekst ?? '');
-  if (!mottaker) return null;
+  if (!mottaker || !liste) return null;
   const idag = iDag();
   const mine = punkter.filter((p) => p.listeId === liste.id);
   const alle = gaverTil(mottaker.id, punkter);
   const anledninger = mottaker.anledninger ?? [];
+  const andre = felles?.personer.find((p) => p.id !== meg?.id);
+
+  /** Felles ↔ bare meg: flytter mottakeren med gaver og ideer til det andre gaveåret */
+  async function settSynlighet(privat: boolean) {
+    if (privat === liste!.privat || flytter) return;
+    setFlytter(true);
+    const til = await hentEllerLag(lister, privat);
+    if (til) {
+      const foer = [mottaker!, ...alle];
+      const f = flyttMottaker(mottaker!, punkter, til);
+      if (await listeLager.lagrePunkter(f.punkter)) {
+        for (const v of f.vedlegg) await lager.kopierVedlegg(v.fra, v.til).catch(console.error);
+        visToast({
+          tekst: privat ? `Nå ser bare du ${mottaker!.tekst}` : `${mottaker!.tekst} er felles${andre ? ` – ${andre.navn} ser det også` : ''}`,
+          angre: () => { void listeLager.lagrePunkter(foer); visToast(null); },
+        });
+      }
+    }
+    setFlytter(false);
+  }
   const ideer = alle.filter((g) => !g.anledning && !erBrukt('gaveaar', g.status));
   // Valgt eller kjøpt: gaver med anledning eller som er kjøpt, til de er gitt
   const planlagt = alle.filter((g) => (g.anledning || erBrukt('gaveaar', g.status)) && g.status !== 'gitt');
@@ -270,7 +356,7 @@ function MottakerArk({ liste, mottakerId, lukk }: { liste: Liste; mottakerId: st
   function leggTilIde(e: FormEvent) {
     e.preventDefault();
     if (!nyIde.trim()) return;
-    void listeLager.lagrePunkter([{ ...nyttPunkt(liste.id, 'gaveaar', nyIde.trim(), nesteRekkefolge(mine)), forelderId: mottaker!.id }]);
+    void listeLager.lagrePunkter([{ ...nyttPunkt(liste!.id, 'gaveaar', nyIde.trim(), nesteRekkefolge(mine)), forelderId: mottaker!.id }]);
     setNyIde('');
   }
 
@@ -305,8 +391,17 @@ function MottakerArk({ liste, mottakerId, lukk }: { liste: Liste; mottakerId: st
   }
   if (utgift) return <UtgiftSkjema forslag={utgift} privatStart={!!utgift.privat} lukk={() => setUtgift(null)} />;
 
+  /** Sveip mot høyre = kjøpt (havner på neste anledning), mot venstre = slett */
+  function slettGave(g: Punkt) {
+    const angre = listeLager.slettPunkt(g);
+    visToast({ tekst: `Slettet «${g.tekst}»`, angre: () => { void angre(); visToast(null); } });
+  }
+  const sveipKjopt = (g: Punkt) => (g.status === 'ide'
+    ? { tekst: 'Kjøpt', ikon: 'sjekk', gjor: () => lagreGave(g, medStatus(g, 'gaveaar', 'kjopt', idag)) }
+    : undefined);
+
   const gaveRad = (g: Punkt, visAnledning = false) => (
-    <div className="rad" key={g.id}>
+    <Sveip className="rad" key={g.id} hoyre={sveipKjopt(g)} venstre={{ tekst: 'Slett', ikon: 'slett', fare: true, gjor: () => slettGave(g) }}>
       <button className="rad-knapp" onClick={() => setRedigerer(g)}>
         <span className="hoved">
           <span className="navn">{g.tekst}</span>
@@ -319,7 +414,7 @@ function MottakerArk({ liste, mottakerId, lukk }: { liste: Liste; mottakerId: st
         {g.belop ? <span className="belop">{kr(g.belop)}</span> : null}
       </button>
       <StatusKnapp type="gaveaar" status={g.status} endre={() => lagreGave(g, medStatus(g, 'gaveaar', nesteStatus('gaveaar', g.status), idag))} />
-    </div>
+    </Sveip>
   );
 
   const mangler = (['bursdag', 'jul', 'morsdag', 'farsdag'] as AnledningType[]).filter((t) => !anledninger.some((a) => a.type === t));
@@ -338,9 +433,27 @@ function MottakerArk({ liste, mottakerId, lukk }: { liste: Liste; mottakerId: st
         {mottaker.fodt && <p className="dempet liten" style={{ marginTop: -8 }}>{fodtTekst(mottaker.fodt, idag)}</p>}
 
         <div className="felt">
+          <span>Idébanken <span className="dempet" style={{ fontWeight: 400 }}>– følger med fra år til år</span></span>
+          <form className="hurtig" onSubmit={leggTilIde}>
+            <input value={nyIde} onChange={(e) => setNyIde(e.target.value)} placeholder="Ny idé, f.eks. Strikkebok" aria-label="Ny idé" enterKeyHint="done" />
+            <button type="submit" className="knapp primar ikon" aria-label="Legg til idé" disabled={!nyIde.trim()}><Ikon navn="pluss" /></button>
+          </form>
+          {ideer.length > 0 ? <div className="liste">{ideer.map((g) => gaveRad(g))}</div>
+            : <small>Ingen ideer ennå. Trykk på en idé for å velge anledning, pris, lenke og bilde.</small>}
+          {ideer.length > 0 && <small>Sveip en idé mot høyre når den er kjøpt – den havner på neste anledning.</small>}
+        </div>
+
+        {planlagt.length > 0 && (
+          <div className="felt">
+            <span>Valgt eller kjøpt <span className="dempet" style={{ fontWeight: 400 }}>– trykk for å bytte anledning</span></span>
+            <div className="liste">{planlagt.sort((a, b) => (a.anledning ?? '').localeCompare(b.anledning ?? '')).map((g) => gaveRad(g, true))}</div>
+          </div>
+        )}
+
+        <div className="felt">
           <span>Anledninger og budsjett</span>
           <div className="anledninger">
-            {anledninger.map((a) => <AnledningRad key={a.id} a={a} fodt={a.type === 'bursdag' ? mottaker.fodt : undefined} endre={settAnledning} fjern={() => fjernAnledning(a)} />)}
+            {sorterAnledninger(anledninger, idag).map((a) => <AnledningRad key={a.id} a={a} fodt={a.type === 'bursdag' ? mottaker.fodt : undefined} endre={settAnledning} fjern={() => fjernAnledning(a)} />)}
           </div>
           <div className="valgchips" role="group" aria-label="Legg til anledning">
             {mangler.map((t) => (
@@ -351,20 +464,24 @@ function MottakerArk({ liste, mottakerId, lukk }: { liste: Liste; mottakerId: st
           {nyEgen && <NyEgenAnledning lagre={(a) => { leggTilAnledning(a); setNyEgen(false); }} avbryt={() => setNyEgen(false)} />}
         </div>
 
-        <div className="felt">
-          <span>Idébanken <span className="dempet" style={{ fontWeight: 400 }}>– følger med fra år til år</span></span>
-          <form className="hurtig" onSubmit={leggTilIde}>
-            <input value={nyIde} onChange={(e) => setNyIde(e.target.value)} placeholder="Ny idé, f.eks. Strikkebok" aria-label="Ny idé" enterKeyHint="done" />
-            <button type="submit" className="knapp primar ikon" aria-label="Legg til idé" disabled={!nyIde.trim()}><Ikon navn="pluss" /></button>
-          </form>
-          {ideer.length > 0 ? <div className="liste">{ideer.map((g) => gaveRad(g))}</div>
-            : <small>Ingen ideer ennå. Trykk på en idé for å velge anledning, pris, lenke og bilde.</small>}
-        </div>
-
-        {planlagt.length > 0 && (
-          <div className="felt">
-            <span>Valgt eller kjøpt <span className="dempet" style={{ fontWeight: 400 }}>– trykk for å bytte anledning</span></span>
-            <div className="liste">{planlagt.sort((a, b) => (a.anledning ?? '').localeCompare(b.anledning ?? '')).map((g) => gaveRad(g, true))}</div>
+        {meg && (
+          <div className="felt-rad">
+            <Felt etikett="Hvem ser" hjelp={liste.privat ? 'Bare du ser personen og gavene.' : `Dere ser begge personen og gavene.`}>
+              <select value={liste.privat ? 'privat' : 'felles'} disabled={flytter} onChange={(e) => void settSynlighet(e.target.value === 'privat')}>
+                <option value="felles">Felles</option>
+                <option value="privat">Bare meg</option>
+              </select>
+            </Felt>
+            <Felt etikett="Kjøper" hjelp={liste.privat ? 'Du kjøper selv.' : 'Budsjett og kjøp teller i den personens pott.'}>
+              <select value={liste.privat ? meg.id : mottaker.ansvarlig ?? ''} disabled={liste.privat} onChange={(e) => lagreMottaker({ ansvarlig: e.target.value || undefined })}>
+                {liste.privat
+                  ? <option value={meg.id}>Deg</option>
+                  : <>
+                    <option value="">Felles (ikke bestemt)</option>
+                    {(felles?.personer ?? []).map((p) => <option key={p.id} value={p.id}>{p.id === meg.id ? `${p.navn} (deg)` : p.navn}</option>)}
+                  </>}
+              </select>
+            </Felt>
           </div>
         )}
 
@@ -487,21 +604,24 @@ export function AnledningsPlan({ type: t, aar: a, gaaTil }: { type?: string; aar
   const kommende = type === 'jul' ? plan : plan.filter((p) => p.dato >= idag);
   const tidligere = type === 'jul' ? [] : plan.filter((p) => p.dato < idag);
   const pottListe = potter(plan, meg?.id);
+  const perPott = budsjettPerPott(plan, meg?.id);
   const nokkel = planNokkel(type, aar);
   const gaa = (ny: { type?: PlanType; aar?: number }) => gaaTil(`lister/plan/${ny.type ?? type}/${ny.aar ?? (ny.type && ny.type !== type ? nestePlanAar(ny.type) : aar)}`);
   const navnPaa = (id: string) => felles?.personer.find((p) => p.id === id)?.navn ?? 'Ukjent';
 
-  // Pottene: felles, deg og eventuelt den andre (felles gaver den andre betaler)
+  // Pottene: felles, deg og eventuelt den andre (felles mottakere den andre er ansvarlig for, eller gaver den betaler).
+  // Personbudsjettene fordeles etter hvem som er ansvarlig for mottakeren.
   const fliser: { id: string; tittel: string; liste?: Liste; budsjett: number; egetBudsjett: boolean }[] = [];
   if (fellesListe) {
     const eget = fellesListe.anledningsBudsjett?.[nokkel];
-    fliser.push({ id: 'felles', tittel: 'Felles', liste: fellesListe, budsjett: eget ?? personbudsjett(plan, fellesListe.id), egetBudsjett: eget !== undefined });
+    fliser.push({ id: 'felles', tittel: 'Felles', liste: fellesListe, budsjett: eget ?? perPott.get('felles') ?? 0, egetBudsjett: eget !== undefined });
   }
   if (meg) {
     const eget = minListe?.anledningsBudsjett?.[nokkel];
-    fliser.push({ id: meg.id, tittel: `Fra deg (${meg.navn})`, liste: minListe, budsjett: eget ?? (minListe ? personbudsjett(plan, minListe.id) : 0), egetBudsjett: eget !== undefined });
+    fliser.push({ id: meg.id, tittel: `Fra deg (${meg.navn})`, liste: minListe, budsjett: eget ?? perPott.get(meg.id) ?? 0, egetBudsjett: eget !== undefined });
   }
-  for (const p of pottListe) if (!fliser.some((f) => f.id === p.id)) fliser.push({ id: p.id, tittel: `Fra ${navnPaa(p.id)}`, budsjett: 0, egetBudsjett: false });
+  const andrePotter = new Set([...pottListe.map((p) => p.id), ...perPott.keys()]);
+  for (const id of andrePotter) if (!fliser.some((f) => f.id === id)) fliser.push({ id, tittel: `Fra ${navnPaa(id)}`, budsjett: perPott.get(id) ?? 0, egetBudsjett: false });
 
   /** Ny mottaker til jul eller bursdag. Bursdag åpner arket, så datoen kan legges inn. («Andre» legges til på personen.) */
   function leggTil(e: FormEvent, liste: Liste) {
@@ -597,7 +717,7 @@ export function AnledningsPlan({ type: t, aar: a, gaaTil }: { type?: string; aar
         </>
       )}
 
-      {mottakerArk && <MottakerArk liste={mottakerArk.liste} mottakerId={mottakerArk.id} lukk={() => setMottakerArk(null)} />}
+      {mottakerArk && <MottakerArk mottakerId={mottakerArk.id} lukk={() => setMottakerArk(null)} />}
       {budsjettFor && <BudsjettArk liste={budsjettFor} nokkel={nokkel} tittel={planTittel(type, aar)} lukk={() => setBudsjettFor(null)} />}
     </>
   );

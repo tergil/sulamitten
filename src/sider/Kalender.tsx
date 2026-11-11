@@ -772,7 +772,7 @@ function KategoriArk({ lukk }: { lukk: () => void }) {
         <div className="liste">
           {kategorier.map((k) => aapen === k.id ? (
             <div className="kategori-rediger" key={k.id}>
-              <Felt etikett="Navn"><input value={k.navn} autoFocus onChange={(e) => lagre(kategorier.map((x) => (x.id === k.id ? { ...x, navn: e.target.value } : x)))} /></Felt>
+              <Felt etikett="Navn"><input value={k.navn} onChange={(e) => lagre(kategorier.map((x) => (x.id === k.id ? { ...x, navn: e.target.value } : x)))} /></Felt>
               <div className="felt"><span>Farge</span><Fargevalg verdi={k.farge} endre={(farge) => lagre(kategorier.map((x) => (x.id === k.id ? { ...x, farge } : x)))} /></div>
               <div className="knapperad slutt">
                 <button className="knapp flat fare dytt" onClick={() => (!antall(k.id) ? (lagre(kategorier.filter((x) => x.id !== k.id), `Slettet «${k.navn}»`), setAapen(null)) : spor({

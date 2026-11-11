@@ -224,7 +224,7 @@ export function demoLister(idag = iDag()): { lister: Rad<Liste>[]; punkter: Punk
 
   // Gaveår: felles for begge, og Karis private (Ola ser det ikke)
   const ga = liste('Gaveår', 'kake', 'Gaver', 'gaveaar');
-  const bm = punkt(ga, 'Bestemor', { fodt: '1941-03-14', anledninger: [{ id: 'a-bm-b', type: 'bursdag', dag: '03-14', budsjett: 500 }, { id: 'a-bm-j', type: 'jul', budsjett: 800 }] });
+  const bm = punkt(ga, 'Bestemor', { fodt: '1941-03-14', ansvarlig: 'kari', anledninger: [{ id: 'a-bm-b', type: 'bursdag', dag: '03-14', budsjett: 500 }, { id: 'a-bm-j', type: 'jul', budsjett: 800 }] });
   punkt(ga, 'Pledd', { forelderId: bm, belop: 700, status: 'kjopt', anledning: `a-bm-j:${aar}`, betaler: 'kari', ferdigDato: om(-3) });
   punkt(ga, 'Puslespill', { forelderId: bm, belop: 300 });
   const mor = punkt(ga, 'Mamma', { fodt: `1956-${om(18).slice(5)}`, anledninger: [

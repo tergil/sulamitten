@@ -18,7 +18,12 @@ Personlige arbeidsinstrukser ligger i `~/.claude/CLAUDE.md`. Denne fila handler 
   gavehistorikk, hagesesong per måned og huskelapp med frister (også på Oversikt). En liste kan kobles til en budsjettpost
   (sammenlignes med årsbeløpet) eller et sparemål. «Kjøpt» på et punkt med beløp tilbyr «Før utgift».
   Punkter kan dras i ny rekkefølge (håndtaket ⋮⋮, innenfor samme nivå) og ha bilder/PDF som vedlegg.
-- **Gaveår** (listetype `gaveaar`, `sider/Gaveaar.tsx`, `logikk/gaveaar.ts`): ett felles + ett privat per person.
+- **Gaveår** (listetype `gaveaar`, `sider/Gaveaar.tsx`, `logikk/gaveaar.ts`): hver person ser **ett** gaveår (`mittGaveaar()`).
+  Under panseret er det fortsatt én felles + én privat liste (RLS styrer per liste), men de vises samlet, og listeoversikten
+  viser bare én rad. «Ny liste → Gaveår» åpner det som finnes. På personen: «Hvem ser» (Felles / Bare meg – `flyttMottaker()`
+  flytter personen, gavene og vedleggene til den andre listen) og «Kjøper» (`ansvarlig` i `ekstra`, bare felles).
+  Ansvarlig styrer potten (`pottFor()`: privat = deg, ellers `betaler` på gaven, ellers `ansvarlig`, ellers felles).
+  Bryteren «Mine kjøp | Alle» (huskes per enhet) viser bare egne + felles der du er ansvarlig, med pris (`planlagtPris()`: gaven, ellers budsjettet).
   Mottaker = hovedpunkt med `anledninger` (bursdag, jul, morsdag/farsdag regnes ut, egne – evt. «bare én gang») og budsjett.
   Gaver/ideer = underpunkter; `anledning` = «<anledning-id>:<år>», tom = idébanken (følger med til neste år).
   `betaler` = person-id når en felles gave går av én persons gavekonto. `fodt` på mottakeren gir bursdag og alder.
@@ -114,6 +119,9 @@ npm run vapid        # nøkler for push-varsler: offentlig → src/data/varselno
   konto, person, revisjon, kategori i bruk). Aldri dobbelttrykk eller `confirm()`.
 - **Tekststørrelse:** skriftstørrelser i `rem` (følger iPhones tekststørrelse via `-apple-system-body`). Unntak i px: bunnmenyens
   etiketter og bitene i månedsruta. Bredder som holder tekst (klokkeslett, datoblokker) også i rem. Test med `html { font-size: 32px }`.
+- **Ark** (`Ark` i `ui/felles.tsx`): selve arket får fokus, aldri første felt – tastaturet skal ikke sprette opp når man
+  åpner noe for å se på det. Bare skjemaer for noe **nytt** setter `autoFocus` på feltet (`autoFocus={ny}` / `={!eksisterende}`).
+  Sveip ned på toppen (streken og tittelen, `.ark-topp`) lukker arket på mobil.
 - **Sveip** på listerader (`ui/Sveip.tsx`, bare berøring): høyre = gjort/neste status, venstre = slett. Alltid også en knapp for det samme.
 - Ikonrutenes farge følger listekategorien (`IkonBoble kategori=…`), ikke ikonet.
 - Tone: kort, folkelig, et lite skråsmil – også i tomme sider, feil og økonomi (Terjes valg). Men alltid tydelig om hva som skjedde

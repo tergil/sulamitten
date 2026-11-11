@@ -257,6 +257,12 @@ button.rad { border-radius: 0; }
 .felt input:focus, .felt select:focus, .felt textarea:focus { outline: 2px solid var(--aksent); outline-offset: -1px; border-color: var(--aksent); }
 .felt-rad { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--a3); }
 .felt select { width: 100%; min-width: 0; }
+/* Datofelt på iPhone er smalere og lavere enn vanlige felt – gjør dem like */
+.felt input:is([type=date], [type=time]) {
+  -webkit-appearance: none; appearance: none; display: block; width: 100%; min-width: 0; height: 48px; text-align: left;
+}
+.felt input:is([type=date], [type=time])::-webkit-date-and-time-value { text-align: left; }
+.ark:focus { outline: none; }
 .belop-felt { position: relative; }
 .belop-felt input { width: 100%; padding-right: 44px; font-variant-numeric: tabular-nums; }
 .belop-felt::after { content: 'kr'; position: absolute; right: var(--a3); top: 50%; transform: translateY(-50%); color: var(--dempet); font-size: 0.875rem; pointer-events: none; }
@@ -285,7 +291,10 @@ button.rad { border-radius: 0; }
   animation: inn-ark .25s cubic-bezier(.2, .8, .2, 1);
 }
 .ark .handtak { width: 40px; height: 4px; border-radius: 99px; background: var(--linje-sterk); margin: 0 auto var(--a3); }
-.ark-hode { display: flex; align-items: center; gap: var(--a2); margin-bottom: var(--a4); }
+/* Toppen (streken og tittelen) kan dras ned for å lukke arket. Litt større treffflate oppover. */
+.ark { transition: transform .18s ease-out; }
+.ark.drar { transition: none; }
+.ark-topp { touch-action: none; margin-top: calc(-1 * var(--a2)); padding-top: var(--a2); }.ark-hode { display: flex; align-items: center; gap: var(--a2); margin-bottom: var(--a4); }
 .ark-hode h2 { flex: 1; }
 @media (min-width: 700px) {
   .slor { align-items: center; padding: var(--a5); }

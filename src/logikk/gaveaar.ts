@@ -71,6 +71,71 @@ export const anledningsNokkel = (a: Anledning, aar: number) => `${a.id}:${aar}`;
 /** Gavelistene som er gaveår (ikke maler) */
 export const gaveaar = (lister: Liste[]) => lister.filter((l) => !l.mal && l.type === 'gaveaar');
 
+export interface MittGaveaar {
+  /** Alle gaveårene du ser (felles + ditt private), vist som ett */
+  alle: Liste[];
+  /** Hit havner nye felles mottakere */
+  felles?: Liste;
+  /** Hit havner mottakere som bare du ser */
+  privat?: Liste;
+  /** Det som vises i listeoversikten og som lenkene går til */
+  hoved?: Liste;
+}
+
+/**
+ * Hver person har ett gaveår: det felles og ditt private vises sammen.
+ * Under panseret er det to lister, fordi databasen styrer hvem som ser hva per liste.
+ */
+export function mittGaveaar(lister: Liste[]): MittGaveaar {
+  const alle = gaveaar(lister).sort((a, b) => a.rekkefolge - b.rekkefolge || a.opprettet.localeCompare(b.opprettet));
+  const felles = alle.find((l) => !l.privat);
+  const privat = alle.find((l) => l.privat);
+  return { alle, felles, privat, hoved: felles ?? privat };
+}
+
+/**
+ * Hvem som kjøper (og har budsjettet): private mottakere = deg, felles = «Betales av» på gaven,
+ * ellers mottakerens ansvarlige, ellers «felles».
+ */
+export function pottFor(liste: Liste, mottaker: Punkt | undefined, gave: Punkt | undefined, megId: Id | undefined): string {
+  if (liste.privat) return megId ?? 'meg';
+  return gave?.betaler ?? mottaker?.ansvarlig ?? 'felles';
+}
+
+/** Mottakere du skal kjøpe til: dine egne, og felles der du er ansvarlig */
+export function erMinMottaker(liste: Liste, mottaker: Punkt, megId: Id | undefined): boolean {
+  return liste.privat || (!!megId && mottaker.ansvarlig === megId);
+}
+
+/** Anledningene sortert etter når de kommer neste gang. Uten dato havner sist. */
+export function sorterAnledninger(anledninger: Anledning[], iDag: string): Anledning[] {
+  const neste = new Map(anledninger.map((a) => [a.id, nesteDato(a, iDag)]));
+  return [...anledninger].sort((a, b) => {
+    const x = neste.get(a.id), y = neste.get(b.id);
+    return x && y ? x.localeCompare(y) : x ? -1 : y ? 1 : 0;
+  });
+}
+
+/**
+ * Flytter en mottaker (med gaver og ideer) til et annet gaveår – f.eks. fra felles til «bare meg».
+ * Vedleggene må kopieres til den nye listens mappe, ellers mister den som ser listen tilgangen.
+ * I et privat gaveår gir ansvarlig og «Betales av» ingen mening, så de fjernes.
+ */
+export function flyttMottaker(mottaker: Punkt, punkter: Punkt[], til: Liste): { punkter: Punkt[]; vedlegg: { fra: string; til: string }[] } {
+  const vedlegg: { fra: string; til: string }[] = [];
+  const flytt = (p: Punkt): Punkt => ({
+    ...p, listeId: til.id,
+    ansvarlig: til.privat ? undefined : p.ansvarlig,
+    betaler: til.privat ? undefined : p.betaler,
+    vedlegg: p.vedlegg?.map((v) => {
+      const sti = `${til.id}/${p.id}/${v.sti.split('/').pop()}`;
+      vedlegg.push({ fra: v.sti, til: sti });
+      return { ...v, sti };
+    }),
+  });
+  return { punkter: [flytt(mottaker), ...gaverTil(mottaker.id, punkter).map(flytt)], vedlegg };
+}
+
 /** Mottakerne i et gaveår: hovedpunktene */
 export const mottakere = (listeId: Id, punkter: Punkt[]) =>
   punkter.filter((p) => p.listeId === listeId && !p.forelderId).sort((a, b) => a.rekkefolge - b.rekkefolge);
@@ -123,6 +188,17 @@ export function forekomster(lister: Liste[], punkter: Punkt[], iDag: string, dag
     }
   }
   return ut.sort((a, b) => a.dato.localeCompare(b.dato) || a.mottaker.tekst.localeCompare(b.mottaker.tekst, 'nb'));
+}
+
+/** Planlagt pris for en anledning: summen av valgte gaver med pris, ellers budsjettet */
+export function planlagtPris(f: Forekomst): { belop: number; budsjett: boolean } {
+  const gaver = f.gaver.reduce((s, g) => s + (g.belop ?? 0), 0);
+  return gaver > 0 ? { belop: gaver, budsjett: false } : { belop: f.anledning.budsjett ?? 0, budsjett: true };
+}
+
+/** Anledningene du skal kjøpe til: dine egne mottakere, felles der du er ansvarlig, og gaver du betaler */
+export function mineForekomster(alle: Forekomst[], megId: Id | undefined): Forekomst[] {
+  return alle.filter((f) => erMinMottaker(f.liste, f.mottaker, megId) || (!!megId && f.gaver.some((g) => g.betaler === megId)));
 }
 
 /** Anledninger innen fristen (3 uker) der ingen gave er kjøpt ennå – til huskelappen */
@@ -231,14 +307,14 @@ export interface Pott {
 }
 
 /**
- * Hvem som betaler hva: private gaveår teller på eieren (deg), felles gaveår på «felles»,
- * med mindre gaven er merket «Betales av» en person.
+ * Hvem som betaler hva: private gaveår teller på eieren (deg), felles gaveår på «felles» –
+ * med mindre gaven er merket «Betales av» en person, eller mottakeren har en ansvarlig.
  */
 export function potter(plan: PlanPerson[], megId: Id | undefined): Pott[] {
   const map = new Map<string, Pott>();
   for (const d of plan.flatMap((p) => p.deler)) {
     for (const g of d.gaver) {
-      const id = d.liste.privat ? megId ?? 'meg' : g.betaler ?? 'felles';
+      const id = pottFor(d.liste, d.mottaker, g, megId);
       if (!map.has(id)) map.set(id, { id, planlagt: 0, brukt: 0, antall: 0 });
       const pott = map.get(id)!;
       pott.antall++;
@@ -252,6 +328,16 @@ export function potter(plan: PlanPerson[], megId: Id | undefined): Pott[] {
 /** Sum av personbudsjettene for anledningen i én liste */
 export function personbudsjett(plan: PlanPerson[], listeId: Id): number {
   return plan.flatMap((p) => p.deler).filter((d) => d.liste.id === listeId).reduce((s, d) => s + (d.anledning.budsjett ?? 0), 0);
+}
+
+/** Personbudsjettene for anledningen fordelt på pott (felles, deg, den andre) – ansvarlig styrer potten */
+export function budsjettPerPott(plan: PlanPerson[], megId: Id | undefined): Map<string, number> {
+  const ut = new Map<string, number>();
+  for (const d of plan.flatMap((p) => p.deler)) {
+    const id = pottFor(d.liste, d.mottaker, undefined, megId);
+    ut.set(id, (ut.get(id) ?? 0) + (d.anledning.budsjett ?? 0));
+  }
+  return ut;
 }
 
 /** «Juleplan 2026», «Bursdager 2026», «Andre anledninger 2026» */

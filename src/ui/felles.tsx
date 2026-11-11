@@ -1,5 +1,5 @@
 // Små gjenbrukbare byggeklosser. Hold dem enkle – stilen ligger i stil/app.css.
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import LOGO from './logo.json';
 import { listeIkon } from '../logikk/lister';
@@ -294,28 +294,74 @@ export function useBekreft(): [ReactNode, (v: BekreftValg) => void] {
 
 // ---------------------------------------------------------------- Ark (bunnark / dialog)
 
+/** Hvor langt (px) arket må dras ned før det lukkes – eller et raskt sveip */
+const LUKK_DRA = 110;
+
+/**
+ * Bunnark / dialog. Selve arket får fokus, ikke første felt – så tastaturet ikke spretter opp når man bare
+ * vil se eller trykke på det man skal endre. Skjemaer for noe nytt bruker `autoFocus` på feltet selv.
+ * Sveip ned på toppen (streken og tittelen) lukker arket på mobil.
+ */
 export function Ark({ tittel, lukk, children, bred }: { tittel: string; lukk: () => void; children: ReactNode; bred?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [dy, setDy] = useState(0);
+  const [lukker, setLukker] = useState(false);
+  const dra = useRef<{ y: number; id: number; t: number; aktiv: boolean } | null>(null);
+  const dro = useRef(false);
   useEffect(() => {
     const tast = (e: KeyboardEvent) => e.key === 'Escape' && lukk();
     document.addEventListener('keydown', tast);
     const forrige = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    if (!ref.current?.contains(document.activeElement)) {
-      ref.current?.querySelector<HTMLElement>('input, select, textarea, button:not(.lukk)')?.focus({ preventScroll: true });
-    }
+    if (!ref.current?.contains(document.activeElement)) ref.current?.focus({ preventScroll: true });
     return () => {
       document.removeEventListener('keydown', tast);
       document.body.style.overflow = forrige;
     };
   }, [lukk]);
+
+  function ned(e: ReactPointerEvent<HTMLDivElement>) {
+    if (e.pointerType !== 'touch' || lukker) return;
+    dra.current = { y: e.clientY, id: e.pointerId, t: performance.now(), aktiv: false };
+    dro.current = false;
+  }
+  function flytt(e: ReactPointerEvent<HTMLDivElement>) {
+    const d = dra.current;
+    if (!d || d.id !== e.pointerId) return;
+    const y = e.clientY - d.y;
+    if (!d.aktiv) {
+      if (y > 8) { d.aktiv = true; dro.current = true; e.currentTarget.setPointerCapture(e.pointerId); }
+      else if (y < -8) { dra.current = null; return; }
+      else return;
+    }
+    setDy(Math.max(0, y));
+  }
+  function opp(e: ReactPointerEvent<HTMLDivElement>) {
+    const d = dra.current;
+    if (!d || d.id !== e.pointerId) return;
+    dra.current = null;
+    const y = e.clientY - d.y;
+    const fart = y / Math.max(1, performance.now() - d.t); // px per ms
+    if (d.aktiv && (y > LUKK_DRA || fart > 0.6)) {
+      // Glir ut, så lukkes det
+      setLukker(true);
+      setDy(ref.current?.offsetHeight ?? 600);
+      setTimeout(lukk, 180);
+    } else setDy(0);
+  }
+
   return (
     <div className="slor" onMouseDown={(e) => e.target === e.currentTarget && lukk()}>
-      <div className={`ark${bred ? ' bred' : ''}`} role="dialog" aria-modal="true" aria-label={tittel} ref={ref}>
-        <div className="handtak" />
-        <div className="ark-hode">
-          <h2>{tittel}</h2>
-          <button className="knapp flat ikon lukk" onClick={lukk} aria-label="Lukk"><Ikon navn="lukk" /></button>
+      <div className={`ark${bred ? ' bred' : ''}${dy && !lukker ? ' drar' : ''}`} role="dialog" aria-modal="true" aria-label={tittel} ref={ref} tabIndex={-1}
+        style={dy ? { transform: `translateY(${dy}px)` } : undefined}>
+        <div className="ark-topp" onPointerDown={ned} onPointerMove={flytt} onPointerUp={opp} onPointerCancel={opp}
+          // Et drag skal ikke også trykke på lukkeknappen
+          onClickCapture={(e) => { if (dro.current) { e.preventDefault(); e.stopPropagation(); dro.current = false; } }}>
+          <div className="handtak" />
+          <div className="ark-hode">
+            <h2>{tittel}</h2>
+            <button className="knapp flat ikon lukk" onClick={lukk} aria-label="Lukk"><Ikon navn="lukk" /></button>
+          </div>
         </div>
         {children}
       </div>

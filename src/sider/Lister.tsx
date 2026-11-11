@@ -18,7 +18,7 @@ import {
 import { Ark, BelopFelt, Felt, IKON_ETIKETT, Ikon, IkonBoble, LISTEIKONER, Logo, MAANEDER_KORT, Segment, Tom, dagerTekst, kortDato, kr, ukedagDato, useBekreft } from '../ui/felles';
 import { UtgiftSkjema, type UtgiftForslag } from '../ui/UtgiftSkjema';
 import { Sveip, type SveipHandling } from '../ui/Sveip';
-import { ANLEDNING_IKON, anledningsNavn, anledningsValg, gaveVarsler, mottakere as mottakereI, forekomster, nokkelTekst } from '../logikk/gaveaar';
+import { ANLEDNING_IKON, anledningsNavn, anledningsValg, gaveVarsler, mittGaveaar, mottakere as mottakereI, forekomster, nokkelTekst } from '../logikk/gaveaar';
 import { AnledningsPlan, GaveaarSide } from './Gaveaar';
 
 
@@ -360,7 +360,9 @@ function ListeOversikt({ gaaTil }: { gaaTil: (r: string) => void }) {
   const setFilter = (k: string) => { setFilterRaa(k); lagreListefilter(k); };
   if (!lastet) return <Laster />;
 
-  const vanlige = lister.filter((l) => !l.mal).sort((a, b) => a.rekkefolge - b.rekkefolge || a.navn.localeCompare(b.navn, 'nb'));
+  // Felles og privat gaveår vises som én rad
+  const gaveaarHoved = mittGaveaar(lister).hoved;
+  const vanlige = lister.filter((l) => !l.mal && (l.type !== 'gaveaar' || l.id === gaveaarHoved?.id)).sort((a, b) => a.rekkefolge - b.rekkefolge || a.navn.localeCompare(b.navn, 'nb'));
   const maler = lister.filter((l) => l.mal).sort((a, b) => a.navn.localeCompare(b.navn, 'nb'));
   const kat = (l: Liste) => l.kategori || 'Annet';
   const kategorier = sorterKategorier(vanlige.map(kat));
@@ -545,11 +547,17 @@ export function NyListeArk({ lukk, opprettet }: { lukk: () => void; opprettet: (
   const harDag = (d: EgenDag) => egne.some((e) => e.dag === d.dag);
   const veksleDag = (d: EgenDag) => setEgne(harDag(d) ? egne.filter((e) => e.dag !== d.dag) : [...egne, d]);
 
+  // Hver person har bare ett gaveår (felles + egne mottakere i samme visning)
+  const finnesGaveaar = u.type === 'gaveaar' ? mittGaveaar(lister).hoved : undefined;
+
   async function opprett(e: FormEvent) {
     e.preventDefault();
+    if (finnesGaveaar) { opprettet(finnesGaveaar.id); return; }
     setLagrer(true);
     const liste: Liste = medKobling({
-      id: nyId(), navn: u.navn.trim(), ikon: u.ikon, kategori: u.kategori.trim() || 'Annet', type: u.type, privat: u.privat, mal: false,
+      id: nyId(), navn: u.navn.trim(), ikon: u.ikon, kategori: u.kategori.trim() || 'Annet', type: u.type,
+      // Gaveåret er felles – mottakere som bare du skal se, merkes «Bare meg» inne i gaveåret
+      privat: u.type === 'gaveaar' ? false : u.privat, mal: false,
       rekkefolge: lister.reduce((m, l) => Math.max(m, l.rekkefolge), 0) + 1, opprettet: idag,
     }, u.kobling);
     let nye: Punkt[] = [];
@@ -621,11 +629,21 @@ export function NyListeArk({ lukk, opprettet }: { lukk: () => void; opprettet: (
           </div>
         )}
 
-        <ListeFelt u={u} sett={sett} visType={kilde === 'tom'} />
+        {finnesGaveaar ? (
+          <div className="banner info">
+            <Ikon navn="kake" />
+            <div>
+              <strong>Du har allerede et gaveår</strong>
+              <p className="liten">Alle mottakere samles der. Venner som bare du skal se, merker du «Bare meg» på personen.</p>
+            </div>
+          </div>
+        ) : <ListeFelt u={u} sett={sett} visType={kilde === 'tom'} />}
 
         <div className="knapperad slutt">
           <button type="button" className="knapp" onClick={lukk}>Avbryt</button>
-          <button type="submit" className="knapp primar" disabled={!u.navn.trim() || lagrer}>{lagrer ? 'Lager …' : 'Lag liste'}</button>
+          {finnesGaveaar
+            ? <button type="submit" className="knapp primar">Åpne gaveåret</button>
+            : <button type="submit" className="knapp primar" disabled={!u.navn.trim() || lagrer}>{lagrer ? 'Lager …' : 'Lag liste'}</button>}
         </div>
       </form>
     </Ark>
@@ -1496,8 +1514,10 @@ function DelArk({ liste, punkter, lukk }: { liste: Liste; punkter: Punkt[]; lukk
 // ---------------------------------------------------------------- Gaveår i listeoversikten og punktarket
 
 function GaveaarRad({ liste, punkter, aapne }: { liste: Liste; punkter: Punkt[]; aapne: () => void }) {
-  const antall = mottakereI(liste.id, punkter).length;
-  const neste = forekomster([liste], punkter, iDag())[0];
+  const { lister } = useLister();
+  const alle = mittGaveaar(lister).alle;
+  const antall = alle.reduce((s, l) => s + mottakereI(l.id, punkter).length, 0);
+  const neste = forekomster(alle, punkter, iDag())[0];
   return (
     <button className="rad" onClick={aapne}>
       <IkonBoble ikon={liste.ikon || 'kake'} kategori={liste.kategori} />
@@ -1505,7 +1525,6 @@ function GaveaarRad({ liste, punkter, aapne }: { liste: Liste; punkter: Punkt[];
         <span className="navn">{liste.navn}</span>
         <span className="info">{antall} {antall === 1 ? 'mottaker' : 'mottakere'}{neste ? ` · neste: ${anledningsNavn(neste.anledning).toLowerCase()} – ${neste.mottaker.tekst} ${kortDato(neste.dato)}` : ''}</span>
       </span>
-      {liste.privat && <span className="merkelapp" title="Bare du ser listen"><Ikon navn="privat" storrelse={12} />Privat</span>}
       <Ikon navn="pilhoyre" storrelse={16} />
     </button>
   );
