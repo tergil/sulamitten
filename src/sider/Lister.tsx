@@ -437,7 +437,7 @@ function medKobling<T extends object>(l: T, kobling: string): T & { postId?: str
   return { ...l, postId: art === 'post' ? id : undefined, kontoId: art === 'konto' ? id : undefined };
 }
 
-function ListeFelt({ u, sett, visType }: { u: Utkast; sett: (e: Partial<Utkast>) => void; visType: boolean }) {
+function ListeFelt({ u, sett, visType, utenNavn }: { u: Utkast; sett: (e: Partial<Utkast>) => void; visType: boolean; utenNavn?: boolean }) {
   const { lister } = useLister();
   const { felles, privat } = useTilstand();
   const kategorier = sorterKategorier([...STANDARD_KATEGORIER, ...lister.map((l) => l.kategori).filter(Boolean)]);
@@ -448,7 +448,7 @@ function ListeFelt({ u, sett, visType }: { u: Utkast; sett: (e: Partial<Utkast>)
 
   return (
     <>
-      <Felt etikett="Navn"><input value={u.navn} onChange={(e) => sett({ navn: e.target.value })} required placeholder="F.eks. Pakkeliste hytta" /></Felt>
+      {!utenNavn && <Felt etikett="Navn"><input value={u.navn} onChange={(e) => sett({ navn: e.target.value })} required placeholder="F.eks. Pakkeliste hytta" /></Felt>}
       <div className="felt">
         <span>Ikon</span>
         <div className="ikon-valg" role="group" aria-label="Ikon">
@@ -535,12 +535,22 @@ export function NyListeArk({ lukk, opprettet }: { lukk: () => void; opprettet: (
   const erAdvent = innebygd?.id === 'advent';
   const sett = (e: Partial<Utkast>) => setU({ ...u, ...e });
 
+  // Navnet malen foreslo sist – et navn du har skrevet selv, overskrives ikke når du bytter mal
+  const [malNavn, setMalNavn] = useState('');
+  const egetNavn = !!u.navn.trim() && u.navn !== malNavn;
+  const alfabetisk = <T extends { navn: string }>(xs: T[]) => [...xs].sort((a, b) => a.navn.localeCompare(b.navn, 'nb'));
+
   function velg(k: string) {
     setKilde(k);
     const m: Mal | Liste | undefined = MALER.find((x) => `mal:${x.id}` === k) ?? egneMaler.find((x) => `egen:${x.id}` === k);
-    if (!m) { setU({ navn: '', ikon: 'liste', kategori: 'Annet', type: 'sjekk', privat: false, kobling: '' }); return; }
-    const navn = m.id === 'advent' ? `Adventskalender ${kalenderAar(idag)}` : m.id === 'gaver' ? `Gaver jul ${kalenderAar(idag)}` : m.navn;
-    setU({ navn, ikon: listeIkon(m.ikon), kategori: m.kategori, type: m.type, privat: !!m.privat, kobling: 'mal' in m ? koblingAv(m) : '' });
+    if (!m) {
+      setU({ navn: egetNavn ? u.navn : '', ikon: 'liste', kategori: 'Annet', type: 'sjekk', privat: false, kobling: '' });
+      setMalNavn('');
+      return;
+    }
+    const forslag = m.id === 'advent' ? `Adventskalender ${kalenderAar(idag)}` : m.id === 'gaver' ? `Gaver jul ${kalenderAar(idag)}` : m.navn;
+    setU({ navn: egetNavn ? u.navn : forslag, ikon: listeIkon(m.ikon), kategori: m.kategori, type: m.type, privat: !!m.privat, kobling: 'mal' in m ? koblingAv(m) : '' });
+    setMalNavn(forslag);
   }
 
   const luker = erAdvent ? kalenderLuker(aar, modus, egne) : [];
@@ -573,19 +583,22 @@ export function NyListeArk({ lukk, opprettet }: { lukk: () => void; opprettet: (
   return (
     <Ark tittel="Ny liste" lukk={lukk} bred>
       <form className="skjema" onSubmit={opprett}>
-        <div className="felt">
-          <span>Start fra</span>
-          <div className="valgchips" role="radiogroup" aria-label="Start fra">
-            <button type="button" role="radio" aria-checked={kilde === 'tom'} onClick={() => velg('tom')}>Tom liste</button>
-            {MALER.map((m) => (
-              <button key={m.id} type="button" role="radio" aria-checked={kilde === `mal:${m.id}`} onClick={() => velg(`mal:${m.id}`)}><Ikon navn={listeIkon(m.ikon)} storrelse={14} />{m.navn}</button>
-            ))}
-            {egneMaler.map((m) => (
-              <button key={m.id} type="button" role="radio" aria-checked={kilde === `egen:${m.id}`} onClick={() => velg(`egen:${m.id}`)}><Ikon navn="kopi" storrelse={14} />{m.navn}</button>
-            ))}
-          </div>
-          <small>{valgt}</small>
-        </div>
+        <Felt etikett="Navn">
+          <input value={u.navn} onChange={(e) => sett({ navn: e.target.value })} required={!finnesGaveaar} placeholder="F.eks. Pakkeliste hytta" autoFocus />
+        </Felt>
+        <Felt etikett="Mal" hjelp={valgt}>
+          <select value={kilde} onChange={(e) => velg(e.target.value)}>
+            <option value="tom">Ingen mal – tom liste</option>
+            <optgroup label="Maler">
+              {alfabetisk(MALER).map((m) => <option key={m.id} value={`mal:${m.id}`}>{m.navn}</option>)}
+            </optgroup>
+            {egneMaler.length > 0 && (
+              <optgroup label="Dine maler">
+                {alfabetisk(egneMaler).map((m) => <option key={m.id} value={`egen:${m.id}`}>{m.navn}</option>)}
+              </optgroup>
+            )}
+          </select>
+        </Felt>
 
         {erAdvent && (
           <div className="kort innfelt">
@@ -637,7 +650,7 @@ export function NyListeArk({ lukk, opprettet }: { lukk: () => void; opprettet: (
               <p className="liten">Alle mottakere samles der. Venner som bare du skal se, merker du «Bare meg» på personen.</p>
             </div>
           </div>
-        ) : <ListeFelt u={u} sett={sett} visType={kilde === 'tom'} />}
+        ) : <ListeFelt u={u} sett={sett} visType={kilde === 'tom'} utenNavn />}
 
         <div className="knapperad slutt">
           <button type="button" className="knapp" onClick={lukk}>Avbryt</button>

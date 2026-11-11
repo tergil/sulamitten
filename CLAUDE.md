@@ -24,7 +24,7 @@ Personlige arbeidsinstrukser ligger i `~/.claude/CLAUDE.md`. Denne fila handler 
   flytter personen, gavene og vedleggene til den andre listen) og «Kjøper» (`ansvarlig` i `ekstra`, bare felles).
   Ansvarlig styrer potten (`pottFor()`: privat = deg, ellers `betaler` på gaven, ellers `ansvarlig`, ellers felles).
   Bryteren «Mine kjøp | Alle» (huskes per enhet) viser bare egne + felles der du er ansvarlig, med pris (`planlagtPris()`: gaven, ellers budsjettet).
-  Mottaker = hovedpunkt med `anledninger` (bursdag, jul, morsdag/farsdag regnes ut, egne – evt. «bare én gang») og budsjett.
+  Mottaker = hovedpunkt med `anledninger` (bursdag, jul, egne – evt. «bare én gang»; morsdag/farsdag kan ikke legges til lenger, men gamle vises fortsatt) og budsjett.
   Gaver/ideer = underpunkter; `anledning` = «<anledning-id>:<år>», tom = idébanken (følger med til neste år).
   `betaler` = person-id når en felles gave går av én persons gavekonto.
   **Ferdig** (`gaveStatus()`): appen vet ikke hvor mange gaver som skal kjøpes, så «alle kjøpt» = `venter` til noen trykker

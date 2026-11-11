@@ -302,8 +302,52 @@ const LUKK_DRA = 110;
  * vil se eller trykke på det man skal endre. Skjemaer for noe nytt bruker `autoFocus` på feltet selv.
  * Sveip ned på toppen (streken og tittelen) lukker arket på mobil.
  */
+// ---------------------------------------------------------------- Tilbake lukker arket
+// Åpne ark får ett felles steg i nettleserhistorikken (samme adresse, `state.ark`). «Tilbake» (knapp, sveip, Android)
+// lukker da det øverste arket i stedet for å forlate siden. Lukkes arket på annen måte, fjernes steget igjen.
+// Synkroniseringen venter til React er ferdig, så et ark som byttes med et annet (person → gave) ikke gir hopp.
+const arkStabel: { lukk: () => void }[] = [];
+let ignorerPop = false;
+let synkPlanlagt = false;
+const erArkSteg = () => !!(history.state as { ark?: boolean } | null)?.ark;
+
+function synkHistorikk() {
+  if (synkPlanlagt) return;
+  synkPlanlagt = true;
+  setTimeout(() => {
+    synkPlanlagt = false;
+    if (arkStabel.length && !erArkSteg()) history.pushState({ ...(history.state ?? {}), ark: true }, '');
+    else if (!arkStabel.length && erArkSteg()) { ignorerPop = true; history.back(); }
+  }, 0);
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('popstate', () => {
+    if (ignorerPop) { ignorerPop = false; return; }
+    if (erArkSteg()) {
+      // Frem igjen til et ark-steg uten åpent ark (f.eks. etter å ha byttet side fra et ark): rydd bort merket
+      if (!arkStabel.length) history.replaceState({ ...(history.state ?? {}), ark: undefined }, '');
+      return;
+    }
+    const topp = arkStabel[arkStabel.length - 1];
+    if (topp) { topp.lukk(); synkHistorikk(); }
+  });
+}
+
 export function Ark({ tittel, lukk, children, bred }: { tittel: string; lukk: () => void; children: ReactNode; bred?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
+  const lukkRef = useRef(lukk);
+  useEffect(() => { lukkRef.current = lukk; }, [lukk]);
+  useEffect(() => {
+    const oppforing = { lukk: () => lukkRef.current() };
+    arkStabel.push(oppforing);
+    synkHistorikk();
+    return () => {
+      const i = arkStabel.indexOf(oppforing);
+      if (i >= 0) arkStabel.splice(i, 1);
+      synkHistorikk();
+    };
+  }, []);
   const [dy, setDy] = useState(0);
   const [lukker, setLukker] = useState(false);
   const dra = useRef<{ y: number; id: number; t: number; aktiv: boolean } | null>(null);

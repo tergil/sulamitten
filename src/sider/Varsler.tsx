@@ -14,7 +14,7 @@ const TYPER: { type: VarselType; ikon: string; navn: string; tekst: string; valg
   { type: 'avtaleFor', ikon: 'klokke', navn: 'Før en avtale', tekst: 'Når avtalen har «varsel» (f.eks. 30 min før). Går til den/de avtalen gjelder eller som henter.', valg: [] },
   { type: 'bursdag', ikon: 'kake', navn: 'Bursdager', tekst: 'Fra gaveårene. Tidlig for å rekke å kjøpe gave, samme dag for å huske å gratulere.', valg: [0, 1, 3, 7, 14, 21, 28] },
   { type: 'jul', ikon: 'juletre', navn: 'Jul', tekst: 'Ett samlet varsel med hvor mange julegaver som er kjøpt.', valg: [1, 7, 14, 21, 28, 42] },
-  { type: 'andre', ikon: 'fest', navn: 'Andre anledninger', tekst: 'Morsdag, farsdag, konfirmasjon, navnefest og lignende.', valg: [0, 1, 3, 7, 14, 21, 28] },
+  { type: 'andre', ikon: 'fest', navn: 'Andre anledninger', tekst: 'Konfirmasjon, navnefest og lignende.', valg: [0, 1, 3, 7, 14, 21, 28] },
   { type: 'frist', ikon: 'liste', navn: 'Frister i lister', tekst: 'Punkter med «Husk innen»-dato som ikke er gjort.', valg: [0, 1, 2, 3, 7] },
   { type: 'kalender', ikon: 'lys', navn: 'Kalenderluker', tekst: 'F.eks. adventskalenderen – idéen for dagen.', valg: [0, 1] },
   { type: 'hage', ikon: 'spire', navn: 'Hagen', tekst: 'Den 1. i hver måned: hva som skal gjøres i hagen.', valg: [] },

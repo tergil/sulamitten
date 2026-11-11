@@ -241,7 +241,7 @@ export const MALER: Mal[] = [
   },
   {
     id: 'gaveaar', navn: 'Gaveår', ikon: 'kake', kategori: 'Gaver', type: 'gaveaar',
-    beskrivelse: 'Faste mottakere med bursdag, jul, morsdag og farsdag. Ideer samles gjennom året og følger med til neste år.',
+    beskrivelse: 'Faste mottakere med bursdag, jul og egne anledninger. Ideer samles gjennom året og følger med til neste år.',
     punkter: [],
   },
   {

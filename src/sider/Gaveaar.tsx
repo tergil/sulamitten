@@ -1,4 +1,4 @@
-// Gaveår: faste mottakere med anledninger, idébank og budsjett – og samlet plan for jul, morsdag og farsdag
+// Gaveår: faste mottakere med anledninger, idébank og budsjett – og samlet plan for jul, bursdager og andre anledninger
 // på tvers av det felles og ditt private gaveår. Data i liste/listepunkt, logikk i logikk/gaveaar.ts.
 import { useState, type FormEvent } from 'react';
 import type { Anledning, AnledningType, Liste, Punkt } from '../data/modell';
@@ -482,7 +482,8 @@ function MottakerArk({ mottakerId, lukk }: { mottakerId: string; lukk: () => voi
     </Sveip>
   );
 
-  const mangler = (['bursdag', 'jul', 'morsdag', 'farsdag'] as AnledningType[]).filter((t) => !anledninger.some((a) => a.type === t));
+  // Bursdag og jul er med fra start. Mangler de (slettet), foreslås de i «Legg til anledning».
+  const mangler = (['bursdag', 'jul'] as AnledningType[]).filter((t) => !anledninger.some((a) => a.type === t));
 
   return (
     <Ark tittel={mottaker.tekst} lukk={lukk} bred>
@@ -521,13 +522,9 @@ function MottakerArk({ mottakerId, lukk }: { mottakerId: string; lukk: () => voi
             {sorterAnledninger(anledninger, idag).map((a) => <AnledningRad key={a.id} a={a} fodt={a.type === 'bursdag' ? mottaker.fodt : undefined} endre={settAnledning} fjern={() => fjernAnledning(a)}
               mottakerNavn={mottaker.tekst} g={anledningGaver} />)}
           </div>
-          <div className="valgchips" role="group" aria-label="Legg til anledning">
-            {mangler.map((t) => (
-              <button key={t} type="button" onClick={() => leggTilAnledning(nyAnledning(t))}><Ikon navn={ANLEDNING_IKON[t]} storrelse={15} />{ANLEDNING_NAVN[t]}</button>
-            ))}
-            <button type="button" onClick={() => setNyEgen(true)}><Ikon navn="fest" storrelse={15} />Annen (konfirmasjon, navnefest …)</button>
-          </div>
-          {nyEgen && <NyEgenAnledning lagre={(a) => { leggTilAnledning(a); setNyEgen(false); }} avbryt={() => setNyEgen(false)} />}
+          {nyEgen
+            ? <NyEgenAnledning mangler={mangler} lagre={(a) => { leggTilAnledning(a); setNyEgen(false); }} avbryt={() => setNyEgen(false)} />
+            : <div><button type="button" className="knapp liten" onClick={() => setNyEgen(true)}><Ikon navn="pluss" storrelse={16} />Legg til anledning</button></div>}
         </div>
 
         {meg && (
@@ -675,12 +672,19 @@ function AnledningRad({ a, fodt, endre, fjern, mottakerNavn, g }: {
   );
 }
 
-function NyEgenAnledning({ lagre, avbryt }: { lagre: (a: Anledning) => void; avbryt: () => void }) {
+function NyEgenAnledning({ mangler, lagre, avbryt }: { mangler: AnledningType[]; lagre: (a: Anledning) => void; avbryt: () => void }) {
   const [navn, setNavn] = useState('');
   const [dato, setDato] = useState('');
   const [enGang, setEnGang] = useState(true);
   return (
     <div className="kort innfelt">
+      {mangler.length > 0 && (
+        <div className="valgchips" role="group" aria-label="Forslag">
+          {mangler.map((t) => (
+            <button key={t} type="button" onClick={() => lagre(nyAnledning(t))}><Ikon navn={ANLEDNING_IKON[t]} storrelse={15} />{ANLEDNING_NAVN[t]}</button>
+          ))}
+        </div>
+      )}
       <div className="felt-rad">
         <Felt etikett="Anledning"><input value={navn} onChange={(e) => setNavn(e.target.value)} placeholder="F.eks. Konfirmasjon" autoFocus /></Felt>
         <Felt etikett="Dato"><input type="date" value={dato} onChange={(e) => setDato(e.target.value)} /></Felt>
@@ -801,7 +805,7 @@ export function AnledningsPlan({ type: t, aar: a, gaaTil }: { type?: string; aar
             <div className="kort-hode">
               <div className="tittel"><h2>{planTittel(type, aar)}</h2><span className="dempet liten">{plan.length} {plan.length === 1 ? 'mottaker' : 'mottakere'} fra {alleAar.length > 1 ? 'felles og ditt private gaveår' : 'gaveåret'}</span></div>
             </div>
-            {type === 'andre' && <p className="dempet liten" style={{ marginBottom: 8 }}>Morsdag, farsdag, konfirmasjon, navnefest og andre anledninger. Legg dem til på personen i gaveåret.</p>}
+            {type === 'andre' && <p className="dempet liten" style={{ marginBottom: 8 }}>Konfirmasjon, navnefest og andre anledninger. Legg dem til på personen i gaveåret.</p>}
             {nyIListe.length > 0 && type !== 'andre' && (
               <form className="hurtig" onSubmit={(e) => leggTil(e, nyIListe[nyIListe.length > 1 && (e.currentTarget.elements.namedItem('hvor') as HTMLSelectElement)?.value === 'privat' ? 1 : 0])}>
                 <input value={nyNavn} onChange={(e) => setNyNavn(e.target.value)} placeholder="Ny mottaker" aria-label="Ny mottaker" />
