@@ -9,12 +9,12 @@ import { useTilstand } from '../data/tilstand';
 import { iDag, sum } from '../logikk/beregning';
 import { erBrukt, gavehistorikk, medStatus, nesteRekkefolge, nesteStatus, nyttPunkt, tidligereGaver } from '../logikk/lister';
 import {
-  ANLEDNING_IKON, ANLEDNING_NAVN, PLAN_IKON, PLAN_NAVN, PLAN_TYPER, alder, anledningsDato, anledningsNavn, anledningsPlan, budsjettPerPott, erMinMottaker, flyttGavelister,
+  ANLEDNING_IKON, ANLEDNING_NAVN, PLAN_IKON, anledningsNokkel, gaveStatus, medFerdig, PLAN_NAVN, PLAN_TYPER, alder, anledningsDato, anledningsNavn, anledningsPlan, budsjettPerPott, erMinMottaker, flyttGavelister,
   flyttMottaker, forekomster, gaveaar, gaverTil, medAutoAnledning, mineForekomster, mittGaveaar, mottakere, nesteDato, nokkelTekst, nyAnledning, planNokkel,
   planTittel, planlagtPris, potter, rundDag, sorterAnledninger, tilPlanType,
-  type Forekomst, type PlanDel, type PlanType,
+  filtrerForekomster, type AnledningFilter, type Forekomst, type PlanDel, type PlanType,
 } from '../logikk/gaveaar';
-import { Ark, BelopFelt, Felt, Ikon, IkonBoble, MAANEDER_KORT, Segment, Tom, kortDato, kr, maanedTekst, useBekreft } from '../ui/felles';
+import { Ark, BelopFelt, Felt, Ikon, IkonBoble, MAANEDER_KORT, Segment, Tom, datoTekst, kortDato, kr, maanedTekst, useBekreft } from '../ui/felles';
 import { UtgiftSkjema, type UtgiftForslag } from '../ui/UtgiftSkjema';
 import { Sveip } from '../ui/Sveip';
 import { BudsjettKort, FeilBanner, FristMerke, ListeSkjema, PunktArk, SeksjonHode, StatusKnapp, ValgArk } from './Lister';
@@ -114,6 +114,16 @@ function lesVisning(): Visning {
   try { return localStorage.getItem(VISNING) === 'mine' ? 'mine' : 'alle'; } catch { return 'alle'; }
 }
 
+/** Filteret i årshjulet huskes også per enhet */
+const FILTER = 'familie.gaveaar.filter';
+type Filter = { anledning: AnledningFilter; skjulKjopte: boolean };
+function lesFilter(): Filter {
+  try {
+    const f = JSON.parse(localStorage.getItem(FILTER) ?? '{}') as Partial<Filter>;
+    return { anledning: f.anledning && (f.anledning === 'alle' || PLAN_TYPER.includes(f.anledning)) ? f.anledning : 'alle', skjulKjopte: !!f.skjulKjopte };
+  } catch { return { anledning: 'alle', skjulKjopte: false }; }
+}
+
 /** Navnet på en person fra felles-dokumentet – «deg» for den innloggede */
 function useNavnPaa() {
   const { felles, meg } = useTilstand();
@@ -131,6 +141,12 @@ export function GaveaarSide({ liste, gaaTil }: { liste: Liste; gaaTil: (r: strin
   const [nyPrivat, setNyPrivat] = useState(false);
   const [visning, setVisningRaa] = useState<Visning>(lesVisning);
   const setVisning = (v: Visning) => { setVisningRaa(v); try { localStorage.setItem(VISNING, v); } catch { /* ignorer */ } };
+  const [filter, setFilterRaa] = useState<Filter>(lesFilter);
+  const setFilter = (endring: Partial<Filter>) => {
+    const ny = { ...filter, ...endring };
+    setFilterRaa(ny);
+    try { localStorage.setItem(FILTER, JSON.stringify(ny)); } catch { /* ignorer */ }
+  };
   const idag = iDag();
   // Felles og ditt private gaveår vises som ett
   const ga = mittGaveaar(lister);
@@ -142,9 +158,10 @@ export function GaveaarSide({ liste, gaaTil }: { liste: Liste; gaaTil: (r: strin
   const mott = bareMine ? alleMott.filter(({ liste: l, m }) => erMinMottaker(l, m, meg?.id)) : alleMott;
   const utenAnsvarlig = alleMott.filter(({ liste: l, m }) => !l.privat && !m.ansvarlig).length;
   const tidslinjeAlle = forekomster(alleLister, punkter, idag);
-  const tidslinje = bareMine ? mineForekomster(tidslinjeAlle, meg?.id) : tidslinjeAlle;
+  const tidslinjeUfiltrert = bareMine ? mineForekomster(tidslinjeAlle, meg?.id) : tidslinjeAlle;
+  const tidslinje = filtrerForekomster(tidslinjeUfiltrert, filter);
+  const filtrert = filter.anledning !== 'alle' || filter.skjulKjopte;
   const totalt = sum(tidslinje, (f) => planlagtPris(f).belop);
-  const planer = PLAN_TYPER.map((type) => ({ type, aar: nestePlanAar(type) }));
 
   // Tidslinjen gruppert per måned
   const perMaaned = new Map<string, Forekomst[]>();
@@ -181,14 +198,6 @@ export function GaveaarSide({ liste, gaaTil }: { liste: Liste; gaaTil: (r: strin
 
       <FlyttGavelister />
 
-      <div className="plan-knapper" role="group" aria-label="Planer">
-        {planer.map(({ type, aar }) => (
-          <button key={type} className="chip" onClick={() => gaaTil(`lister/plan/${type}/${aar}`)}>
-            <Ikon navn={PLAN_IKON[type]} storrelse={16} />{planTittel(type, aar)}<Ikon navn="pilhoyre" storrelse={14} />
-          </button>
-        ))}
-      </div>
-
       <BudsjettKort liste={liste} punkter={mine} endre={() => setEndrer(true)} />
 
       <div className="rutenett to">
@@ -200,7 +209,27 @@ export function GaveaarSide({ liste, gaaTil }: { liste: Liste; gaaTil: (r: strin
               {totalt > 0 && <span className="liten">Til sammen (gave eller budsjett) <strong className="tall">{kr(totalt)}</strong></span>}
             </div>
           </div>
-          {tidslinje.length === 0 && (bareMine
+          <div className="filter-chips" role="group" aria-label="Filter">
+            {(['alle', ...PLAN_TYPER] as AnledningFilter[]).map((a) => (
+              <button key={a} type="button" className="chip" aria-pressed={filter.anledning === a} onClick={() => setFilter({ anledning: a })}>
+                {a !== 'alle' && <Ikon navn={PLAN_IKON[a]} storrelse={15} />}{a === 'alle' ? 'Alle' : PLAN_NAVN[a]}
+              </button>
+            ))}
+            <button type="button" className="chip" aria-pressed={filter.skjulKjopte} onClick={() => setFilter({ skjulKjopte: !filter.skjulKjopte })}>
+              <Ikon navn={filter.skjulKjopte ? 'sjekk' : 'gave'} storrelse={15} />Skjul kjøpte
+            </button>
+          </div>
+          {/* Planen har potter, budsjett per anledning og tidligere år – nås herfra når en anledning er valgt */}
+          {filter.anledning !== 'alle' && (
+            <button type="button" className="lenkeknapp plan-lenke" onClick={() => gaaTil(`lister/plan/${filter.anledning}/${nestePlanAar(filter.anledning as PlanType)}`)}>
+              {planTittel(filter.anledning, nestePlanAar(filter.anledning))}: potter, budsjett og tidligere år<Ikon navn="pilhoyre" storrelse={14} />
+            </button>
+          )}
+          {tidslinje.length === 0 && filtrert && tidslinjeUfiltrert.length > 0 && (
+            <Tom ikon="sjekk" tittel={filter.skjulKjopte ? 'Alt er kjøpt' : 'Ingenting her'}
+              tekst={filter.skjulKjopte ? 'Godt jobbet. Ingenting igjen å handle med dette filteret.' : 'Ingen anledninger av denne typen de neste 12 månedene.'} />
+          )}
+          {tidslinjeUfiltrert.length === 0 && (bareMine
             ? <Tom ikon="gave" tittel="Ingenting på deg" tekst="Sett deg som ansvarlig på en felles mottaker, eller legg til dine egne. Så havner de her." />
             : <Tom ikon="kalender" tittel="Årshjulet er tomt" tekst="Legg til mottakere og bursdager, så husker Sulamitten dem for dere." />)}
           {[...perMaaned].map(([maaned, liste_]) => (
@@ -273,21 +302,31 @@ export function GaveaarSide({ liste, gaaTil }: { liste: Liste; gaaTil: (r: strin
 
 function ForekomstRad({ f, aapne }: { f: Forekomst; aapne: () => void }) {
   const kjopt = f.gaver.filter((g) => erBrukt('gaveaar', g.status));
-  const gitt = f.gaver.length > 0 && f.gaver.every((g) => g.status === 'gitt');
   const info = f.gaver.length ? f.gaver.map((g) => g.tekst).join(', ') : f.ideer ? `${f.ideer} ${f.ideer === 1 ? 'idé' : 'ideer'} i idébanken` : 'Ingen ideer ennå';
   const pris = planlagtPris(f);
+  const tilstand = gaveStatus(f.gaver, f.bekreftet);
+  const ferdig = tilstand === 'ferdig';
+  // Ferdig = grønt. Alt kjøpt, men ikke bekreftet = «Bekreft» (trykk på raden). Delvis = nøytralt.
+  const merke = ferdig
+    ? <span className="merkelapp bra"><Ikon navn="sjekk" storrelse={12} />{f.gaver.length && f.gaver.every((g) => g.status === 'gitt') ? 'Gitt' : 'Ferdig'}</span>
+    : tilstand === 'venter' ? <span className="merkelapp info"><Ikon navn="sjekk" storrelse={12} />Alt kjøpt? Bekreft</span>
+      : tilstand === 'delvis' ? <span className="merkelapp">{kjopt.length} av {f.gaver.length} kjøpt</span> : null;
   return (
-    <button className="rad" onClick={aapne}>
-      <span className="dato-blokk" aria-hidden="true"><span className="dag">{Number(f.dato.slice(8))}</span><span className="mnd">{MAANEDER_KORT[Number(f.dato.slice(5, 7)) - 1]}</span></span>
+    <button className={`rad${ferdig ? ' kjopt' : ''}`} onClick={aapne}>
+      {/* Ferdig: grønn datorute med hake i hjørnet, så det synes når man skumleser */}
+      <span className="dato-blokk" aria-hidden="true">
+        <span className="dag">{Number(f.dato.slice(8))}</span><span className="mnd">{MAANEDER_KORT[Number(f.dato.slice(5, 7)) - 1]}</span>
+        {ferdig && <span className="dato-hake"><Ikon navn="sjekk" storrelse={11} /></span>}
+      </span>
       <span className="hoved">
         <span className="navn"><span className="navn-ikon"><Ikon navn={ANLEDNING_IKON[f.anledning.type]} storrelse={15} /></span>{anledningsNavn(f.anledning)} – {f.mottaker.tekst}</span>
         <span className="info">{f.alder !== undefined && <><Alder alder={f.alder} /> · </>}{info}</span>
       </span>
-      {/* Pris til høyre, status under den – merkelapp bare når det haster, så navnet får plass */}
-      {!kjopt.length && f.dager <= 21 && <FristMerke dager={f.dager} />}
-      {pris.belop > 0
-        ? <span className="belop">{kr(pris.belop)}<small>{gitt || kjopt.length ? <><Ikon navn="sjekk" storrelse={11} /> {gitt ? 'gitt' : 'kjøpt'}</> : pris.budsjett ? 'budsjett' : 'valgt'}</small></span>
-        : gitt || kjopt.length ? <span className="merkelapp bra"><Ikon navn="sjekk" storrelse={12} />{gitt ? 'Gitt' : 'Kjøpt'}</span> : null}
+      {/* Pris til høyre, status under den – fristmerke bare når det haster, så navnet får plass */}
+      {tilstand === 'ingen' && f.dager <= 21 && <FristMerke dager={f.dager} />}
+      {merke
+        ? <span className="belop">{pris.belop > 0 && kr(pris.belop)}{merke}</span>
+        : pris.belop > 0 ? <span className="belop">{kr(pris.belop)}<small>{pris.budsjett ? 'budsjett' : 'valgt'}</small></span> : null}
     </button>
   );
 }
@@ -360,13 +399,39 @@ function MottakerArk({ mottakerId, lukk }: { mottakerId: string; lukk: () => voi
     setNyIde('');
   }
 
+  /** Gaver og bekreftelse for én anledning (én gang) – brukes under hver anledning i arket */
+  const erBekreftet = (nokkel: string) => !!mottaker.ferdigeAnledninger?.includes(nokkel);
+  const anledningGaver = (nokkel: string): AnledningGaver => ({
+    gaver: alle.filter((g) => g.anledning === nokkel),
+    bekreftet: erBekreftet(nokkel),
+    leggTil: (tekst, n) => {
+      const gave: Punkt = { ...nyttPunkt(liste!.id, 'gaveaar', tekst, nesteRekkefolge(mine)), forelderId: mottaker!.id, anledning: n };
+      // En ny gave betyr at man ikke er ferdig likevel
+      void listeLager.lagrePunkter(erBekreftet(n) ? [gave, medFerdig(mottaker!, n, false)] : [gave]);
+    },
+    bekreft: (n, ferdig) => {
+      void listeLager.lagrePunkter([medFerdig(mottaker!, n, ferdig)]);
+      if (ferdig) {
+        visToast({
+          tekst: `${mottaker!.tekst} er ferdig til ${nokkelTekst(mottaker, n).toLowerCase()}`,
+          angre: () => { void listeLager.lagrePunkter([medFerdig(mottaker!, n, false)]); visToast(null); },
+        });
+      }
+    },
+  });
+
   function lagreGave(foer: Punkt | undefined, endret: Punkt) {
     const etter = medAutoAnledning(endret, mottaker, idag);
-    void listeLager.lagrePunkter([etter]);
+    // En gave som ikke er kjøpt på en anledning som var bekreftet ferdig: da er man ikke ferdig likevel
+    const angreFerdig = !!etter.anledning && erBekreftet(etter.anledning) && !erBrukt('gaveaar', etter.status);
+    void listeLager.lagrePunkter(angreFerdig ? [etter, medFerdig(mottaker!, etter.anledning!, false)] : [etter]);
     if (erBrukt('gaveaar', etter.status) && !(foer && erBrukt('gaveaar', foer.status))) {
       const til = etter.anledning ? ` til ${nokkelTekst(mottaker, etter.anledning).toLowerCase()}` : '';
+      // Siste gave til anledningen kjøpt: minn om at det må bekreftes (appen vet ikke om flere skal kjøpes)
+      const resten = etter.anledning ? alle.filter((g) => g.anledning === etter.anledning && g.id !== etter.id) : [];
+      const sisteKjopt = !!etter.anledning && !erBekreftet(etter.anledning) && resten.every((g) => erBrukt('gaveaar', g.status));
       visToast({
-        tekst: `«${etter.tekst}» kjøpt${til}`,
+        tekst: `«${etter.tekst}» kjøpt${til}${sisteKjopt ? '. Ferdig? Bekreft under Anledninger.' : ''}`,
         handling: etter.belop ? { tekst: 'Før utgift', kjor: () => { setUtgift(forslag(etter)); visToast(null); } } : undefined,
       });
     }
@@ -453,7 +518,8 @@ function MottakerArk({ mottakerId, lukk }: { mottakerId: string; lukk: () => voi
         <div className="felt">
           <span>Anledninger og budsjett</span>
           <div className="anledninger">
-            {sorterAnledninger(anledninger, idag).map((a) => <AnledningRad key={a.id} a={a} fodt={a.type === 'bursdag' ? mottaker.fodt : undefined} endre={settAnledning} fjern={() => fjernAnledning(a)} />)}
+            {sorterAnledninger(anledninger, idag).map((a) => <AnledningRad key={a.id} a={a} fodt={a.type === 'bursdag' ? mottaker.fodt : undefined} endre={settAnledning} fjern={() => fjernAnledning(a)}
+              mottakerNavn={mottaker.tekst} g={anledningGaver} />)}
           </div>
           <div className="valgchips" role="group" aria-label="Legg til anledning">
             {mangler.map((t) => (
@@ -525,11 +591,34 @@ function MottakerArk({ mottakerId, lukk }: { mottakerId: string; lukk: () => voi
   );
 }
 
-function AnledningRad({ a, fodt, endre, fjern }: { a: Anledning; fodt?: string; endre: (a: Anledning) => void; fjern: () => void }) {
+interface AnledningGaver {
+  /** Gavene til neste gang (nøkkelen «<anledning-id>:<år>») */
+  gaver: Punkt[];
+  bekreftet: boolean;
+  leggTil: (tekst: string, nokkel: string) => void;
+  bekreft: (nokkel: string, ferdig: boolean) => void;
+}
+
+function AnledningRad({ a, fodt, endre, fjern, mottakerNavn, g }: {
+  a: Anledning; fodt?: string; endre: (a: Anledning) => void; fjern: () => void; mottakerNavn: string; g: (nokkel: string) => AnledningGaver;
+}) {
   const idag = iDag();
+  const [nyGave, setNyGave] = useState('');
   // Bursdag med fødselsdato regnes ut, akkurat som jul, morsdag og farsdag
   const fast = a.type === 'jul' || a.type === 'morsdag' || a.type === 'farsdag' || (a.type === 'bursdag' && !!fodt);
   const neste = nesteDato(a, idag);
+  const nokkel = neste ? anledningsNokkel(a, Number(neste.slice(0, 4))) : null;
+  const gaver = nokkel ? g(nokkel) : null;
+  const tilstand = gaver ? gaveStatus(gaver.gaver, gaver.bekreftet) : 'ingen';
+  const antKjopt = gaver ? gaver.gaver.filter((x) => erBrukt('gaveaar', x.status)).length : 0;
+  // «jul 2026», «bursdag 2026»
+  const gangen = neste ? `${anledningsNavn(a).toLocaleLowerCase('nb')} ${neste.slice(0, 4)}` : '';
+  function leggTil(e: FormEvent) {
+    e.preventDefault();
+    if (!nyGave.trim() || !nokkel || !gaver) return;
+    gaver.leggTil(nyGave.trim(), nokkel);
+    setNyGave('');
+  }
   // Datofeltet trenger et år: bruk neste gang (eller året for engangsanledninger)
   const visAar = a.aar ?? Number((neste ?? idag).slice(0, 4));
   return (
@@ -540,7 +629,7 @@ function AnledningRad({ a, fodt, endre, fjern }: { a: Anledning; fodt?: string; 
           ? <input className="anledning-navn" value={a.navn ?? ''} onChange={(e) => endre({ ...a, navn: e.target.value })} aria-label="Navn på anledningen" placeholder="Navn" />
           : <strong>{anledningsNavn(a)}</strong>}
         {fast
-          ? <span className="dempet liten">{neste ? `Neste: ${kortDato(neste)}` : ''}{fodt && neste ? ` · fyller ${alder(fodt, neste)}` : ''}</span>
+          ? <span className="dempet liten">{neste ? `Neste: ${datoTekst(neste)}` : ''}{fodt && neste ? ` · fyller ${alder(fodt, neste)}` : ''}</span>
           : (
             <span className="anledning-dato">
               <input type="date" value={a.dag ? `${visAar}-${a.dag}` : ''} aria-label={`Dato for ${anledningsNavn(a)}`}
@@ -555,6 +644,33 @@ function AnledningRad({ a, fodt, endre, fjern }: { a: Anledning; fodt?: string; 
         <BelopFelt verdi={a.budsjett ?? 0} endre={(v) => endre({ ...a, budsjett: v || undefined })} />
       </div>
       <button type="button" className="knapp flat ikon liten" onClick={fjern} aria-label={`Fjern ${anledningsNavn(a)}`}><Ikon navn="lukk" storrelse={16} /></button>
+
+      {/* Gaver til neste gang: legg til rett her, og bekreft når alt er kjøpt */}
+      {nokkel && gaver && (
+        <div className="anledning-gaver">
+          {tilstand === 'venter' && (
+            <div className="banner info">
+              <Ikon navn="sjekk" />
+              <div>
+                <strong>Alle gavene til {gangen} er kjøpt</strong>
+                <p className="liten">Er {mottakerNavn} ferdig? Mer å kjøpe – legg det til under.</p>
+              </div>
+              <button type="button" className="knapp primar liten" onClick={() => gaver.bekreft(nokkel, true)}>Ja, ferdig</button>
+            </div>
+          )}
+          {tilstand === 'ferdig' && (
+            <span className="anledning-status">
+              <span className="merkelapp bra"><Ikon navn="sjekk" storrelse={12} />Ferdig til {gangen}</span>
+              {gaver.bekreftet && <button type="button" className="lenkeknapp" onClick={() => gaver.bekreft(nokkel, false)}>Ikke ferdig likevel</button>}
+            </span>
+          )}
+          {tilstand === 'delvis' && <span className="dempet liten">{antKjopt} av {gaver.gaver.length} gaver til {gangen} kjøpt</span>}
+          <form className="hurtig" onSubmit={leggTil}>
+            <input value={nyGave} onChange={(e) => setNyGave(e.target.value)} placeholder={`Gave til ${gangen}`} aria-label={`Ny gave til ${gangen}`} enterKeyHint="done" />
+            <button type="submit" className="knapp ikon" aria-label={`Legg til gave til ${gangen}`} disabled={!nyGave.trim()}><Ikon navn="pluss" /></button>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

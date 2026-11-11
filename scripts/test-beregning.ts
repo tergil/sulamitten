@@ -3,7 +3,7 @@ import { avrundOpp, foreslaOverforinger, kopierRevisjon, oppsummerFelles, oppsum
 import { fellesFlyt, privatFlyt } from '../src/logikk/flyt';
 import { demoFelles, demoLister, demoPrivat } from '../src/data/demo';
 import {
-  alder, andreSondag, anledningsDato, anledningsPlan, budsjettPerPott, flyttGavelister, flyttMottaker, forekomster, gaveVarsler, medAutoAnledning, mineForekomster,
+  alder, andreSondag, anledningsDato, anledningsPlan, budsjettPerPott, erKjopt, filtrerForekomster, flyttGavelister, gaveStatus, medFerdig, flyttMottaker, forekomster, gaveVarsler, medAutoAnledning, mineForekomster,
   mittGaveaar, personbudsjett, planlagtPris, potter, rundDag, sorterAnledninger, tilPlanType,
 } from '../src/logikk/gaveaar';
 import { andelGaatt, avstem, dagerIMaaned, flyttMaaned, kategoriStatus, kontoPlan, kontoerFor, muligeDubletter, revisjonForMaaned } from '../src/logikk/oppfolging';
@@ -273,6 +273,25 @@ sjekk('årshjul: konfirmasjon neste år er med', tidslinje.some((f) => f.anledni
 sjekk('varsel 3 uker før når ingenting er kjøpt', gaveVarsler(ga.lister, ga.punkter, '2026-10-11').map((f) => `${f.mottaker.tekst} ${f.dager}`), ['Mamma 18']);
 const kjoptTilMamma = ga.punkter.map((p) => (p.tekst === 'Strikkebok' ? { ...p, status: 'kjopt', anledning: 'a-m-b:2026' } : p));
 sjekk('ingen varsel når gaven er kjøpt', gaveVarsler(ga.lister, kjoptTilMamma, '2026-10-11').length, 0);
+{
+  const tl = forekomster(ga.lister, kjoptTilMamma, '2026-10-11');
+  const navn = (fs: typeof tl) => fs.map((f) => `${f.anledning.type} ${f.mottaker.tekst}`);
+  sjekk('filter: bare jul', filtrerForekomster(tl, { anledning: 'jul', skjulKjopte: false }).every((f) => f.anledning.type === 'jul'), true);
+  sjekk('filter: andre er verken jul eller bursdag', filtrerForekomster(tl, { anledning: 'andre', skjulKjopte: false }).some((f) => f.anledning.type === 'jul' || f.anledning.type === 'bursdag'), false);
+  sjekk('filter: alt kjøpt, men ikke bekreftet, vises fortsatt', navn(filtrerForekomster(tl, { anledning: 'bursdag', skjulKjopte: true })).includes('bursdag Mamma'), true);
+  const mamma = kjoptTilMamma.find((p) => p.tekst === 'Mamma')!;
+  const bekreftet = kjoptTilMamma.map((p) => (p.id === mamma.id ? medFerdig(p, 'a-m-b:2026', true) : p));
+  const tlB = forekomster(ga.lister, bekreftet, '2026-10-11');
+  sjekk('filter: bekreftet ferdig skjules', navn(filtrerForekomster(tlB, { anledning: 'bursdag', skjulKjopte: true })).includes('bursdag Mamma'), false);
+  sjekk('filter: uten skjul er den med', navn(filtrerForekomster(tlB, { anledning: 'bursdag', skjulKjopte: false })).includes('bursdag Mamma'), true);
+  sjekk('ferdig: kan tas tilbake', medFerdig(medFerdig(mamma, 'x:2026', true), 'x:2026', false).ferdigeAnledninger, undefined);
+  const g = (status: string) => ({ ...tl[0].mottaker, status });
+  sjekk('gavestatus', [
+    gaveStatus([], false), gaveStatus([g('kjopt'), g('ide')], false), gaveStatus([g('kjopt'), g('kjopt')], false),
+    gaveStatus([g('gitt')], false), gaveStatus([], true),
+  ], ['ingen', 'delvis', 'venter', 'ferdig', 'ferdig']);
+  sjekk('kjøpt: ingen gaver valgt er ikke ferdig', erKjopt({ ...tl[0], gaver: [], bekreftet: false }), false);
+}
 const jul = anledningsPlan(ga.lister, ga.punkter, 'jul', 2026);
 sjekk('juleplan: felles og private mottakere', jul.map((p) => p.navn), ['Bestemor', 'Lena', 'Mamma', 'Ola', 'Pappa']);
 sjekk('juleplan: valgt gave og ideer', [jul[0].deler[0].gaver.map((g) => g.tekst), jul[0].deler[0].ideer.map((g) => g.tekst)], [['Pledd'], ['Puslespill']]);

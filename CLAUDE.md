@@ -26,9 +26,13 @@ Personlige arbeidsinstrukser ligger i `~/.claude/CLAUDE.md`. Denne fila handler 
   Bryteren «Mine kjøp | Alle» (huskes per enhet) viser bare egne + felles der du er ansvarlig, med pris (`planlagtPris()`: gaven, ellers budsjettet).
   Mottaker = hovedpunkt med `anledninger` (bursdag, jul, morsdag/farsdag regnes ut, egne – evt. «bare én gang») og budsjett.
   Gaver/ideer = underpunkter; `anledning` = «<anledning-id>:<år>», tom = idébanken (følger med til neste år).
-  `betaler` = person-id når en felles gave går av én persons gavekonto. `fodt` på mottakeren gir bursdag og alder.
+  `betaler` = person-id når en felles gave går av én persons gavekonto.
+  **Ferdig** (`gaveStatus()`): appen vet ikke hvor mange gaver som skal kjøpes, så «alle kjøpt» = `venter` til noen trykker
+  «Ja, ferdig» under anledningen i mottakerarket (nøkkelen lagres i `ferdigeAnledninger` på mottakeren). Alle gitt = ferdig.
+  En ny/ikke-kjøpt gave på anledningen opphever bekreftelsen. Under hver anledning: «+ gave» rett til neste gang. `fodt` på mottakeren gir bursdag og alder.
   Planer (`#/lister/plan/<jul|bursdag|andre>/<år>`): Juleplan, Bursdager og Andre (alt unntatt jul og bursdag),
-  samler felles + eget gaveår med potter «Felles» / «Fra deg». Varsler på huskelappen 3 uker før hvis ingenting er kjøpt.
+  samler felles + eget gaveår med potter «Felles» / «Fra deg». Nås fra lenken under filteret i årshjulet når en anledning
+  er valgt (filter: Alle/Jul/Bursdager/Andre + «Skjul kjøpte», `filtrerForekomster()`, huskes per enhet). Varsler på huskelappen 3 uker før hvis ingenting er kjøpt.
 - **Kalender** (`#/kalender`, `sider/Kalender.tsx`, `logikk/kalender.ts`): felles avtaler i tabellen `hendelse`.
   En serie er én rad med `gjentak`; «bare denne dagen» er en egen rad med `serieId` + `originalDato` (`avlyst` = slettet).
   Endring/sletting: bare denne / denne og fremover (serien deles) / hele serien – `endreForekomst`/`slettForekomst`.

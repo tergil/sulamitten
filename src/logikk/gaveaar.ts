@@ -162,6 +162,8 @@ export interface Forekomst {
   ideer: number;
   /** Bursdag med kjent fødselsdato: alderen personen fyller */
   alder?: number;
+  /** Bekreftet ferdig av brukeren (nøkkelen ligger i mottakerens `ferdigeAnledninger`) */
+  bekreftet: boolean;
 }
 
 /** Alle anledninger de neste 12 månedene (fra i dag), sortert på dato */
@@ -182,6 +184,7 @@ export function forekomster(lister: Liste[], punkter: Punkt[], iDag: string, dag
           ut.push({
             liste, mottaker, anledning, aar, dato, dager, nokkel, gaver: alle.filter((g) => g.anledning === nokkel), ideer,
             alder: anledning.type === 'bursdag' ? alder(mottaker.fodt, dato) : undefined,
+            bekreftet: !!mottaker.ferdigeAnledninger?.includes(nokkel),
           });
         }
       }
@@ -199,6 +202,39 @@ export function planlagtPris(f: Forekomst): { belop: number; budsjett: boolean }
 /** Anledningene du skal kjøpe til: dine egne mottakere, felles der du er ansvarlig, og gaver du betaler */
 export function mineForekomster(alle: Forekomst[], megId: Id | undefined): Forekomst[] {
   return alle.filter((f) => erMinMottaker(f.liste, f.mottaker, megId) || (!!megId && f.gaver.some((g) => g.betaler === megId)));
+}
+
+/** Status for gavene til én anledning (én gang) */
+export type GaveStatus = 'ingen' | 'delvis' | 'venter' | 'ferdig';
+
+/**
+ * Appen vet ikke hvor mange gaver dere har tenkt å kjøpe. Når alle valgte gaver er kjøpt, «venter» anledningen
+ * derfor på at noen bekrefter at den er ferdig. Bekreftet, eller alle gaver gitt = ferdig.
+ */
+export function gaveStatus(gaver: Punkt[], bekreftet: boolean): GaveStatus {
+  if (bekreftet || (gaver.length > 0 && gaver.every((g) => g.status === 'gitt'))) return 'ferdig';
+  const kjopt = gaver.filter((g) => erBrukt('gaveaar', g.status)).length;
+  return !kjopt ? 'ingen' : kjopt < gaver.length ? 'delvis' : 'venter';
+}
+
+/** Ferdig handlet: bekreftet, eller alle gavene er gitt */
+export function erKjopt(f: Forekomst): boolean {
+  return gaveStatus(f.gaver, f.bekreftet) === 'ferdig';
+}
+
+/** Mottakeren med anledningen (nøkkel) bekreftet ferdig – eller tatt tilbake */
+export function medFerdig(mottaker: Punkt, nokkel: string, ferdig: boolean): Punkt {
+  const uten = (mottaker.ferdigeAnledninger ?? []).filter((n) => n !== nokkel);
+  const ny = ferdig ? [...uten, nokkel] : uten;
+  return { ...mottaker, ferdigeAnledninger: ny.length ? ny : undefined };
+}
+
+export type AnledningFilter = 'alle' | PlanType;
+
+/** Filteret i årshjulet: anledning (jul, bursdag, andre) og om det som er kjøpt skal skjules */
+export function filtrerForekomster(alle: Forekomst[], filter: { anledning: AnledningFilter; skjulKjopte: boolean }): Forekomst[] {
+  return alle.filter((f) =>
+    (filter.anledning === 'alle' || iPlan(filter.anledning, f.anledning)) && !(filter.skjulKjopte && erKjopt(f)));
 }
 
 /** Anledninger innen fristen (3 uker) der ingen gave er kjøpt ennå – til huskelappen */

@@ -188,6 +188,7 @@ html, body { overflow-x: clip; }
 .merkelapp.varsel { background: var(--varsel-myk); color: var(--varsel); }
 .merkelapp.feil { background: var(--feil-myk); color: var(--feil); }
 .merkelapp.aksent { background: var(--aksent-myk); color: var(--aksent); }
+.merkelapp.info { background: var(--info-myk); color: var(--info); }
 
 /* Segmentvelger */
 .segment { display: inline-flex; padding: 3px; gap: 2px; background: var(--flate-2); border-radius: 999px; border: 1px solid var(--linje); }
@@ -254,6 +255,7 @@ button.rad { border-radius: 0; }
   background: var(--flate); font-size: max(16px, 1rem); /* 16px hindrer zoom på iPhone */
 }
 .felt textarea { padding: var(--a3); min-height: 80px; resize: vertical; }
+.felt input[type=checkbox] { min-height: 0; padding: 0; }
 .felt input:focus, .felt select:focus, .felt textarea:focus { outline: 2px solid var(--aksent); outline-offset: -1px; border-color: var(--aksent); }
 .felt-rad { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--a3); }
 .felt select { width: 100%; min-width: 0; }
@@ -433,6 +435,7 @@ button.rad { border-radius: 0; }
 /* Av/på-bryter */
 input.bryter {
   appearance: none; -webkit-appearance: none; flex: none; width: 44px; height: 26px; border-radius: 999px;
+  min-height: 0; padding: 0; /* ellers arver den feltstilen (.felt input) og blir en stor sirkel */
   background: var(--flate-3); border: 1px solid var(--linje-sterk); position: relative; cursor: pointer; transition: background .15s;
 }
 input.bryter::after {
@@ -692,8 +695,10 @@ body.drar-punkt [data-dra-id] { transition: transform .15s ease; }
 
 /* ---------------------------------------------------------------- Gaveår */
 
-.plan-knapper { display: flex; flex-wrap: wrap; gap: var(--a2); }
-.plan-knapper .chip { min-height: 40px; font-size: 0.875rem; }
+.filter-chips { display: flex; flex-wrap: wrap; gap: var(--a2); margin-bottom: var(--a3); }
+.filter-chips .chip[aria-pressed='true'] { background: var(--aksent); border-color: var(--aksent); color: var(--paa-aksent); }
+.plan-lenke { display: inline-flex; align-items: center; gap: 4px; padding: 0; margin-bottom: var(--a3); }
+.filter-chips .chip { min-height: 40px; font-size: 0.875rem; }
 
 /* Dato i tidslinjen */
 .dato-blokk {
@@ -702,6 +707,16 @@ body.drar-punkt [data-dra-id] { transition: transform .15s ease; }
 }
 .dato-blokk .dag { font-family: var(--font-tittel); font-size: 1.125rem; font-weight: 800; }
 .dato-blokk .mnd { font-size: 0.6875rem; color: var(--dempet); font-weight: 600; }
+/* Kjøpt gave i tidslinjen: grønn datorute med hake, merkelapp til høyre */
+.dato-blokk { position: relative; }
+.rad.kjopt .dato-blokk { background: var(--bra-myk); color: var(--bra); }
+.rad.kjopt .dato-blokk .mnd { color: var(--bra); }
+.dato-hake {
+  position: absolute; top: -5px; right: -5px; width: 18px; height: 18px; border-radius: 50%;
+  background: var(--bra); color: var(--flate); display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 0 2px var(--flate);
+}
+.rad .belop .merkelapp { display: flex; width: max-content; margin: 2px 0 0 auto; }
 .varsel-tekst { color: var(--varsel); }
 .varsel-tekst svg { vertical-align: -1px; }
 
@@ -724,7 +739,13 @@ body.drar-punkt [data-dra-id] { transition: transform .15s ease; }
   width: 100%; min-height: 40px; padding: 0 36px 0 var(--a2); border: 1px solid var(--linje-sterk);
   border-radius: var(--radius-liten); background: var(--flate); font-size: max(16px, 1rem);
 }
+/* Gaver til neste gang under hver anledning: status, bekreftelse og «+ gave» */
+.anledning-gaver { grid-column: 2 / -1; display: flex; flex-direction: column; gap: var(--a2); }
+.anledning-gaver .hurtig { margin-bottom: 0; }
+.anledning-gaver .banner { margin: 0; }
+.anledning-status { display: flex; flex-wrap: wrap; align-items: center; gap: var(--a2); }
 @media (max-width: 520px) {
+  .anledning-gaver { grid-column: 1 / -1; }
   .anledning-rad { grid-template-columns: 28px minmax(0, 1fr) 36px; }
   .anledning-budsjett { grid-column: 2 / 3; }
 }
@@ -981,7 +1002,7 @@ body.drar-punkt [data-dra-id] { transition: transform .15s ease; }
 .info-ikoner > span { display: inline-flex; align-items: center; gap: 2px; }
 .anledning-merke { display: inline-flex; align-items: center; gap: 3px; margin-right: 10px; vertical-align: -2px; }
 .navn-ikon { display: inline-flex; vertical-align: -2px; margin-right: 6px; color: var(--blekk-2); }
-.plan-knapper .chip svg, .merkelapp svg { flex: none; }
+.filter-chips .chip svg, .merkelapp svg { flex: none; }
 
 .mer-fot { display: flex; justify-content: center; padding: var(--a4) 0 var(--a2); opacity: .9; }
 .banner a { color: inherit; font-weight: 600; text-underline-offset: 2px; }
