@@ -344,10 +344,20 @@ function sorterKategorier(kategorier: string[]): string[] {
   return [...new Set(kategorier)].sort((a, b) => (a === 'Annet' ? 1 : b === 'Annet' ? -1 : rang(a) - rang(b) || a.localeCompare(b, 'nb')));
 }
 
+// Valgt kategori i listeoversikten huskes, så den står der når man går tilbake fra en liste.
+const LISTEFILTER = 'familie.listefilter';
+function lesListefilter(): string {
+  try { return localStorage.getItem(LISTEFILTER) || 'alle'; } catch { return 'alle'; }
+}
+function lagreListefilter(k: string) {
+  try { localStorage.setItem(LISTEFILTER, k); } catch { /* ignorer */ }
+}
+
 function ListeOversikt({ gaaTil }: { gaaTil: (r: string) => void }) {
   const { lister, punkter, lastet, feil } = useLister();
   const [ny, setNy] = useState(false);
-  const [filter, setFilter] = useState('alle');
+  const [filter, setFilterRaa] = useState(lesListefilter);
+  const setFilter = (k: string) => { setFilterRaa(k); lagreListefilter(k); };
   if (!lastet) return <Laster />;
 
   const vanlige = lister.filter((l) => !l.mal).sort((a, b) => a.rekkefolge - b.rekkefolge || a.navn.localeCompare(b.navn, 'nb'));
