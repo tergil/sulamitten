@@ -275,6 +275,8 @@ export interface Anledning {
   aar?: number;
   /** Budsjett for gaven hver gang */
   budsjett?: number;
+  /** Planlagt antall gaver hver gang. Når så mange er kjøpt, er anledningen ferdig. Mangler = må bekreftes. */
+  antall?: number;
 }
 
 export interface Vedlegg {

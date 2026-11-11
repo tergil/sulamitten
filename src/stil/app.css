@@ -262,8 +262,10 @@ button.rad { border-radius: 0; }
 /* Datofelt på iPhone er smalere og lavere enn vanlige felt – gjør dem like */
 .felt input:is([type=date], [type=time]) {
   -webkit-appearance: none; appearance: none; display: block; width: 100%; min-width: 0; height: 48px; text-align: left;
+  /* iPhone legger datoen øverst i feltet – linjehøyde = feltets indre høyde sentrerer den, på linje med feltet ved siden av */
+  line-height: 46px;
 }
-.felt input:is([type=date], [type=time])::-webkit-date-and-time-value { text-align: left; }
+.felt input:is([type=date], [type=time])::-webkit-date-and-time-value { text-align: left; margin: 0; line-height: 46px; }
 .ark:focus { outline: none; }
 .belop-felt { position: relative; }
 .belop-felt input { width: 100%; padding-right: 44px; font-variant-numeric: tabular-nums; }
@@ -723,7 +725,7 @@ body.drar-punkt [data-dra-id] { transition: transform .15s ease; }
 /* Anledninger i mottakerarket */
 .anledninger { display: flex; flex-direction: column; }
 .anledning-rad {
-  display: grid; grid-template-columns: 32px minmax(0, 1fr) 128px 36px; align-items: center; gap: var(--a2);
+  display: grid; grid-template-columns: 32px minmax(0, 1fr) auto 36px; align-items: center; gap: var(--a2);
   padding: var(--a2) 0; border-bottom: 1px solid var(--linje);
 }
 .anledning-felt { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
@@ -739,15 +741,22 @@ body.drar-punkt [data-dra-id] { transition: transform .15s ease; }
   width: 100%; min-height: 40px; padding: 0 36px 0 var(--a2); border: 1px solid var(--linje-sterk);
   border-radius: var(--radius-liten); background: var(--flate); font-size: max(16px, 1rem);
 }
-/* Gaver til neste gang under hver anledning: status, bekreftelse og «+ gave» */
+/* Planlagt antall gaver + budsjett side om side */
+.anledning-tall { display: flex; gap: var(--a2); align-items: flex-end; }
+.anledning-budsjett { width: 8rem; }
+.anledning-antall { display: flex; flex-direction: column; gap: 2px; width: 4rem; }
+.anledning-antall input {
+  width: 100%; min-height: 40px; padding: 0 var(--a2); border: 1px solid var(--linje-sterk); border-radius: var(--radius-liten);
+  background: var(--flate); font-size: max(16px, 1rem); text-align: center; font-variant-numeric: tabular-nums;
+}
+/* Status for neste gang under hver anledning: ferdig, x av y eller bekreft */
 .anledning-gaver { grid-column: 2 / -1; display: flex; flex-direction: column; gap: var(--a2); }
-.anledning-gaver .hurtig { margin-bottom: 0; }
 .anledning-gaver .banner { margin: 0; }
 .anledning-status { display: flex; flex-wrap: wrap; align-items: center; gap: var(--a2); }
 @media (max-width: 520px) {
   .anledning-gaver { grid-column: 1 / -1; }
   .anledning-rad { grid-template-columns: 28px minmax(0, 1fr) 36px; }
-  .anledning-budsjett { grid-column: 2 / 3; }
+  .anledning-tall { grid-column: 2 / 3; }
 }
 
 /* Juleplan */

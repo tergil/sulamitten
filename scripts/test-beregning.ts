@@ -3,7 +3,7 @@ import { avrundOpp, foreslaOverforinger, kopierRevisjon, oppsummerFelles, oppsum
 import { fellesFlyt, privatFlyt } from '../src/logikk/flyt';
 import { demoFelles, demoLister, demoPrivat } from '../src/data/demo';
 import {
-  alder, andreSondag, anledningsDato, anledningsPlan, budsjettPerPott, erKjopt, filtrerForekomster, flyttGavelister, gaveStatus, medFerdig, flyttMottaker, forekomster, gaveVarsler, medAutoAnledning, mineForekomster,
+  alder, andreSondag, anledningsDato, anledningsPlan, budsjettPerPott, erKjopt, filtrerForekomster, flyttGavelister, gaveStatus, kjoptAv, medFerdig, flyttMottaker, forekomster, gaveVarsler, medAutoAnledning, mineForekomster,
   mittGaveaar, personbudsjett, planlagtPris, potter, rundDag, sorterAnledninger, tilPlanType,
 } from '../src/logikk/gaveaar';
 import { andelGaatt, avstem, dagerIMaaned, flyttMaaned, kategoriStatus, kontoPlan, kontoerFor, muligeDubletter, revisjonForMaaned } from '../src/logikk/oppfolging';
@@ -290,6 +290,11 @@ sjekk('ingen varsel når gaven er kjøpt', gaveVarsler(ga.lister, kjoptTilMamma,
     gaveStatus([], false), gaveStatus([g('kjopt'), g('ide')], false), gaveStatus([g('kjopt'), g('kjopt')], false),
     gaveStatus([g('gitt')], false), gaveStatus([], true),
   ], ['ingen', 'delvis', 'venter', 'ferdig', 'ferdig']);
+  sjekk('gavestatus med planlagt antall', [
+    gaveStatus([g('kjopt')], false, 2), gaveStatus([g('kjopt'), g('kjopt')], false, 2), gaveStatus([g('ide')], false, 1),
+    gaveStatus([g('kjopt'), g('kjopt'), g('kjopt')], false, 2),
+  ], ['delvis', 'ferdig', 'ingen', 'ferdig']);
+  sjekk('kjøpt av planlagt antall', [kjoptAv([g('kjopt')], 3), kjoptAv([g('kjopt'), g('ide')])], ['1 av 3 kjøpt', '1 av 2 kjøpt']);
   sjekk('kjøpt: ingen gaver valgt er ikke ferdig', erKjopt({ ...tl[0], gaver: [], bekreftet: false }), false);
 }
 const jul = anledningsPlan(ga.lister, ga.punkter, 'jul', 2026);

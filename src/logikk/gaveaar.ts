@@ -208,18 +208,24 @@ export function mineForekomster(alle: Forekomst[], megId: Id | undefined): Forek
 export type GaveStatus = 'ingen' | 'delvis' | 'venter' | 'ferdig';
 
 /**
- * Appen vet ikke hvor mange gaver dere har tenkt å kjøpe. Når alle valgte gaver er kjøpt, «venter» anledningen
- * derfor på at noen bekrefter at den er ferdig. Bekreftet, eller alle gaver gitt = ferdig.
+ * Med planlagt antall: ferdig når så mange gaver er kjøpt. Uten: appen vet ikke hvor mange dere har tenkt å kjøpe,
+ * så når alle valgte gaver er kjøpt, «venter» anledningen på at noen bekrefter. Bekreftet, eller alle gitt = ferdig.
  */
-export function gaveStatus(gaver: Punkt[], bekreftet: boolean): GaveStatus {
+export function gaveStatus(gaver: Punkt[], bekreftet: boolean, antall?: number): GaveStatus {
+  const kjopt = antallKjopt(gaver);
   if (bekreftet || (gaver.length > 0 && gaver.every((g) => g.status === 'gitt'))) return 'ferdig';
-  const kjopt = gaver.filter((g) => erBrukt('gaveaar', g.status)).length;
+  if (antall) return kjopt >= antall ? 'ferdig' : kjopt ? 'delvis' : 'ingen';
   return !kjopt ? 'ingen' : kjopt < gaver.length ? 'delvis' : 'venter';
 }
 
-/** Ferdig handlet: bekreftet, eller alle gavene er gitt */
+export const antallKjopt = (gaver: Punkt[]) => gaver.filter((g) => erBrukt('gaveaar', g.status)).length;
+
+/** «1 av 2 kjøpt»: av planlagt antall, ellers av valgte gaver */
+export const kjoptAv = (gaver: Punkt[], antall?: number) => `${antallKjopt(gaver)} av ${antall || gaver.length} kjøpt`;
+
+/** Ferdig handlet: planlagt antall kjøpt, bekreftet, eller alle gavene er gitt */
 export function erKjopt(f: Forekomst): boolean {
-  return gaveStatus(f.gaver, f.bekreftet) === 'ferdig';
+  return gaveStatus(f.gaver, f.bekreftet, f.anledning.antall) === 'ferdig';
 }
 
 /** Mottakeren med anledningen (nøkkel) bekreftet ferdig – eller tatt tilbake */

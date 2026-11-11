@@ -27,9 +27,9 @@ Personlige arbeidsinstrukser ligger i `~/.claude/CLAUDE.md`. Denne fila handler 
   Mottaker = hovedpunkt med `anledninger` (bursdag, jul, egne – evt. «bare én gang»; morsdag/farsdag kan ikke legges til lenger, men gamle vises fortsatt) og budsjett.
   Gaver/ideer = underpunkter; `anledning` = «<anledning-id>:<år>», tom = idébanken (følger med til neste år).
   `betaler` = person-id når en felles gave går av én persons gavekonto.
-  **Ferdig** (`gaveStatus()`): appen vet ikke hvor mange gaver som skal kjøpes, så «alle kjøpt» = `venter` til noen trykker
+  **Ferdig** (`gaveStatus()`): `antall` på anledningen = planlagt antall gaver; når så mange er kjøpt, er den ferdig. Uten antall = `venter` til noen trykker
   «Ja, ferdig» under anledningen i mottakerarket (nøkkelen lagres i `ferdigeAnledninger` på mottakeren). Alle gitt = ferdig.
-  En ny/ikke-kjøpt gave på anledningen opphever bekreftelsen. Under hver anledning: «+ gave» rett til neste gang. `fodt` på mottakeren gir bursdag og alder.
+  En ny/ikke-kjøpt gave på anledningen opphever bekreftelsen. Gaver telles bare når de er knyttet til anledningen (`anledning`). `fodt` på mottakeren gir bursdag og alder.
   Planer (`#/lister/plan/<jul|bursdag|andre>/<år>`): Juleplan, Bursdager og Andre (alt unntatt jul og bursdag),
   samler felles + eget gaveår med potter «Felles» / «Fra deg». Nås fra lenken under filteret i årshjulet når en anledning
   er valgt (filter: Alle/Jul/Bursdager/Andre + «Skjul kjøpte», `filtrerForekomster()`, huskes per enhet). Varsler på huskelappen 3 uker før hvis ingenting er kjøpt.
